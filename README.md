@@ -37,12 +37,25 @@
             padding: 10px;
             border-radius: 5px;
             font-size: 14px;
+            max-width: 300px;
+        }
+        #debug {
+            position: absolute;
+            top: 60px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-family: monospace;
         }
     </style>
 </head>
 <body>
     <button id="startButton">PLAY VR ZOMBIE SHOOTER</button>
     <div id="info">Score: <span id="score">0</span> | Zombies: <span id="zombieCount">0</span></div>
+    <div id="debug">Joystick: waiting...</div>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
@@ -252,28 +265,43 @@
                 for (let source of session.inputSources) {
                     if (source.handedness === 'left' && source.gamepad) {
                         const axes = source.gamepad.axes;
-                        if (axes.length >= 2) {
-                            const x = axes[2]; // Thumbstick X
-                            const y = axes[3]; // Thumbstick Y
+                        
+                        // Debug: show all axis values
+                        document.getElementById('debug').textContent = 
+                            `Left Controller Axes: ${axes.map((v, i) => `[${i}]:${v.toFixed(2)}`).join(' ')}`;
+                        
+                        // Try different axis configurations (different VR headsets use different indices)
+                        let x = 0, y = 0;
+                        
+                        // Quest/Meta uses axes 2 and 3
+                        if (axes.length >= 4) {
+                            x = axes[2];
+                            y = axes[3];
+                        }
+                        // Some controllers use axes 0 and 1
+                        else if (axes.length >= 2) {
+                            x = axes[0];
+                            y = axes[1];
+                        }
+                        
+                        // Check if joystick is being moved
+                        if (Math.abs(x) > 0.1 || Math.abs(y) > 0.1) {
+                            const speed = 0.15;
                             
-                            if (Math.abs(x) > 0.1 || Math.abs(y) > 0.1) {
-                                const speed = 0.1;
-                                
-                                // Get camera direction
-                                const direction = new THREE.Vector3();
-                                camera.getWorldDirection(direction);
-                                direction.y = 0;
-                                direction.normalize();
-                                
-                                // Get right vector
-                                const right = new THREE.Vector3();
-                                right.crossVectors(camera.up, direction);
-                                right.normalize();
-                                
-                                // Move dolly
-                                dolly.position.add(direction.multiplyScalar(-y * speed));
-                                dolly.position.add(right.multiplyScalar(-x * speed));
-                            }
+                            // Get camera direction
+                            const direction = new THREE.Vector3();
+                            camera.getWorldDirection(direction);
+                            direction.y = 0;
+                            direction.normalize();
+                            
+                            // Get right vector
+                            const right = new THREE.Vector3();
+                            right.crossVectors(direction, camera.up);
+                            right.normalize();
+                            
+                            // Move dolly
+                            dolly.position.add(direction.multiplyScalar(-y * speed));
+                            dolly.position.add(right.multiplyScalar(x * speed));
                         }
                     }
                 }
