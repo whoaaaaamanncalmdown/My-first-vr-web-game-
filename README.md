@@ -15,10 +15,10 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.m
 import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js';
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb); // Day sky
+scene.background = new THREE.Color(0x87ceeb);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 1.6, 3);
+camera.position.set(0, 1.6, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -26,7 +26,7 @@ renderer.xr.enabled = true;
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 
-/* LIGHTING */
+/* LIGHT */
 scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 1.2));
 const sun = new THREE.DirectionalLight(0xffffff, 0.8);
 sun.position.set(5, 10, 7);
@@ -34,48 +34,31 @@ scene.add(sun);
 
 /* FLOOR */
 const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(50, 50),
+  new THREE.PlaneGeometry(100, 100),
   new THREE.MeshStandardMaterial({ color: 0x55aa55 })
 );
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-/* CUBES */
-const cubes = [];
-for (let i = 0; i < 15; i++) {
-  const cube = new THREE.Mesh(
-    new THREE.BoxGeometry(),
-    new THREE.MeshStandardMaterial({ color: 0xff8844 })
-  );
-  cube.position.set(
-    Math.random() * 10 - 5,
-    Math.random() * 3 + 1,
-    Math.random() * -10
-  );
-  scene.add(cube);
-  cubes.push(cube);
-}
-
-/* XR RIG */
+/* PLAYER RIG */
 const player = new THREE.Group();
 player.add(camera);
 scene.add(player);
 
 /* CONTROLLERS */
-const leftController = renderer.xr.getController(0);
-const rightController = renderer.xr.getController(1);
-scene.add(leftController);
-scene.add(rightController);
+const controller1 = renderer.xr.getController(0);
+const controller2 = renderer.xr.getController(1);
+scene.add(controller1, controller2);
 
 /* HANDS */
-function hand(color) {
+function makeHand(color) {
   return new THREE.Mesh(
     new THREE.BoxGeometry(0.08, 0.08, 0.15),
     new THREE.MeshStandardMaterial({ color })
   );
 }
-leftController.add(hand(0x2222ff));
-rightController.add(hand(0xff2222));
+controller1.add(makeHand(0x2222ff));
+controller2.add(makeHand(0xff2222));
 
 /* FAKE GUN */
 const gun = new THREE.Group();
@@ -94,37 +77,37 @@ barrel.position.z = -0.15;
 gun.add(handle, barrel);
 gun.rotation.x = -Math.PI / 2;
 gun.position.set(0, -0.02, -0.08);
-rightController.add(gun);
+controller2.add(gun);
 
-/* JOYSTICK MOVEMENT */
-const speed = 0.05;
+/* JOYSTICK MOVEMENT (FIXED) */
+const speed = 0.06;
 
 renderer.setAnimationLoop(() => {
   const session = renderer.xr.getSession();
   if (session) {
     for (const source of session.inputSources) {
-      if (!source.gamepad || source.handedness !== "left") continue;
+      if (!source.gamepad) continue;
 
-      const [xAxis, yAxis] = source.gamepad.axes;
+      const axes = source.gamepad.axes;
+      if (axes.length < 2) continue;
 
-      // Direction based on headset
-      const dir = new THREE.Vector3();
-      camera.getWorldDirection(dir);
-      dir.y = 0;
-      dir.normalize();
+      const x = axes[0];
+      const y = axes[1];
+
+      if (Math.abs(x) < 0.1 && Math.abs(y) < 0.1) continue;
+
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0;
+      forward.normalize();
 
       const right = new THREE.Vector3();
-      right.crossVectors(dir, camera.up).normalize();
+      right.crossVectors(forward, camera.up).normalize();
 
-      player.position.addScaledVector(dir, -yAxis * speed);
-      player.position.addScaledVector(right, xAxis * speed);
+      player.position.addScaledVector(forward, -y * speed);
+      player.position.addScaledVector(right, x * speed);
     }
   }
-
-  cubes.forEach(c => {
-    c.rotation.x += 0.01;
-    c.rotation.y += 0.01;
-  });
 
   renderer.render(scene, camera);
 });
