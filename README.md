@@ -28,20 +28,32 @@
         #startButton:hover {
             background: #ff6666;
         }
-        #info {
+        #hud {
             position: absolute;
             top: 10px;
             left: 10px;
             color: white;
-            background: rgba(0,0,0,0.7);
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 14px;
-            max-width: 300px;
+            background: rgba(0,0,0,0.8);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        #roundNotice {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff4444;
+            font-size: 48px;
+            font-weight: bold;
+            text-shadow: 3px 3px 6px black;
+            display: none;
+            z-index: 50;
         }
         #debug {
             position: absolute;
-            top: 60px;
+            top: 150px;
             left: 10px;
             color: white;
             background: rgba(0,0,0,0.5);
@@ -56,30 +68,48 @@
 </head>
 <body>
     <button id="startButton">PLAY VR ZOMBIE SHOOTER</button>
-    <div id="info">Score: <span id="score">0</span> | Zombies: <span id="zombieCount">0</span></div>
-    <div id="debug">Joystick: waiting...</div>
+    <div id="hud">
+        <div>Round: <span id="round">1</span></div>
+        <div>Score: <span id="score">0</span></div>
+        <div>Zombies Left: <span id="zombieCount">0</span></div>
+        <div>Points: <span id="points">500</span></div>
+        <div>Ammo: <span id="ammo">30/30</span></div>
+        <div style="margin-top:8px; color: #ffff00;">Current Gun: <span id="gunName">Pistol</span></div>
+    </div>
+    <div id="roundNotice">ROUND 1</div>
+    <div id="debug">Move joysticks...</div>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        let scene, camera, renderer, gun, zombies = [], score = 0;
+        let scene, camera, renderer, currentGun, zombies = [];
         let controller1, controller2, dolly;
-        let moveVector = new THREE.Vector2();
+        let score = 0, points = 500, currentRound = 1, zombiesThisRound = 5, zombiesKilled = 0;
+        let ammo = 30, maxAmmo = 30;
+        
+        // Gun stats
+        let guns = {
+            pistol: { name: 'Pistol', damage: 1, fireRate: 300, maxAmmo: 30, packed: false },
+            rifle: { name: 'Rifle', damage: 2, fireRate: 150, maxAmmo: 60, packed: false, cost: 1500 },
+            shotgun: { name: 'Shotgun', damage: 3, fireRate: 500, maxAmmo: 24, packed: false, cost: 2000 }
+        };
+        
+        let currentGunType = 'pistol';
+        let canShoot = true;
+        let wallGuns = [];
+        let packAPunchMachine = null;
         
         const startButton = document.getElementById('startButton');
-        
         startButton.addEventListener('click', init);
         
         function init() {
             startButton.style.display = 'none';
             
-            // Scene setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x1a1a2e);
             scene.fog = new THREE.Fog(0x1a1a2e, 10, 50);
             
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            // Dolly for movement
             dolly = new THREE.Group();
             dolly.position.set(0, 0, 10);
             dolly.add(camera);
@@ -90,7 +120,6 @@
             renderer.xr.enabled = true;
             document.body.appendChild(renderer.domElement);
             
-            // Lighting
             const ambient = new THREE.AmbientLight(0xffffff, 0.3);
             scene.add(ambient);
             
@@ -98,200 +127,326 @@
             light.position.set(10, 20, 10);
             scene.add(light);
             
-            // Create map (floor and walls)
             createMap();
-            
-            // Create gun
             createGun();
-            
-            // Setup VR controllers
             setupControllers();
+            createWallGuns();
+            createPackAPunch();
+            startRound(1);
             
-            // Spawn initial zombies
-            for (let i = 0; i < 5; i++) {
-                spawnZombie();
-            }
-            
-            // Create VR button
             const vrButton = createVRButton();
             document.body.appendChild(vrButton);
             
-            renderer.xr.addEventListener('sessionstart', () => {
-                console.log('VR Session started');
-            });
-            
             renderer.setAnimationLoop(animate);
-            
             window.addEventListener('resize', onWindowResize);
         }
         
         function createMap() {
-            // Floor
             const floorGeo = new THREE.PlaneGeometry(50, 50);
-            const floorMat = new THREE.MeshStandardMaterial({ 
-                color: 0x2d4a2b,
-                roughness: 0.8
-            });
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x2d4a2b, roughness: 0.8 });
             const floor = new THREE.Mesh(floorGeo, floorMat);
             floor.rotation.x = -Math.PI / 2;
             floor.position.y = -1;
             scene.add(floor);
             
-            // Walls
             const wallMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a });
             
-            // Back wall
             const wall1 = new THREE.Mesh(new THREE.BoxGeometry(50, 10, 1), wallMat);
             wall1.position.set(0, 4, -25);
             scene.add(wall1);
             
-            // Left wall
             const wall2 = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 50), wallMat);
             wall2.position.set(-25, 4, 0);
             scene.add(wall2);
             
-            // Right wall
             const wall3 = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 50), wallMat);
             wall3.position.set(25, 4, 0);
             scene.add(wall3);
             
-            // Add some obstacles
             for (let i = 0; i < 8; i++) {
                 const box = new THREE.Mesh(
                     new THREE.BoxGeometry(2, 3, 2),
                     new THREE.MeshStandardMaterial({ color: 0x663300 })
                 );
-                box.position.set(
-                    Math.random() * 30 - 15,
-                    1.5,
-                    Math.random() * 30 - 15
-                );
+                box.position.set(Math.random() * 30 - 15, 1.5, Math.random() * 30 - 15);
                 scene.add(box);
             }
         }
         
-        function createGun() {
-            gun = new THREE.Group();
+        function createWallGuns() {
+            // Rifle on wall
+            const rifleStation = createGunStation(-20, 1.5, 5, 0xff6600, 'RIFLE\n1500 pts');
+            rifleStation.userData.gunType = 'rifle';
+            rifleStation.userData.cost = 1500;
+            wallGuns.push(rifleStation);
             
-            // Gun body
-            const body = new THREE.Mesh(
-                new THREE.BoxGeometry(0.1, 0.1, 0.5),
+            // Shotgun on wall
+            const shotgunStation = createGunStation(20, 1.5, 5, 0xffaa00, 'SHOTGUN\n2000 pts');
+            shotgunStation.userData.gunType = 'shotgun';
+            shotgunStation.userData.cost = 2000;
+            wallGuns.push(shotgunStation);
+        }
+        
+        function createGunStation(x, y, z, color, label) {
+            const group = new THREE.Group();
+            
+            const base = new THREE.Mesh(
+                new THREE.BoxGeometry(1.5, 2, 0.2),
+                new THREE.MeshStandardMaterial({ color: color })
+            );
+            group.add(base);
+            
+            const gunModel = new THREE.Mesh(
+                new THREE.BoxGeometry(0.15, 0.15, 0.6),
                 new THREE.MeshStandardMaterial({ color: 0x222222 })
             );
-            body.position.z = -0.25;
-            gun.add(body);
+            gunModel.position.set(0, 0, 0.3);
+            group.add(gunModel);
             
-            // Barrel
+            group.position.set(x, y, z);
+            scene.add(group);
+            return group;
+        }
+        
+        function createPackAPunch() {
+            packAPunchMachine = new THREE.Group();
+            
+            const machine = new THREE.Mesh(
+                new THREE.BoxGeometry(2, 3, 2),
+                new THREE.MeshStandardMaterial({ 
+                    color: 0x9900ff,
+                    emissive: 0x9900ff,
+                    emissiveIntensity: 0.3
+                })
+            );
+            packAPunchMachine.add(machine);
+            
+            const light = new THREE.PointLight(0x9900ff, 2, 10);
+            light.position.y = 2;
+            packAPunchMachine.add(light);
+            
+            packAPunchMachine.position.set(0, 1.5, -20);
+            packAPunchMachine.userData.cost = 5000;
+            scene.add(packAPunchMachine);
+        }
+        
+        function createGun() {
+            currentGun = new THREE.Group();
+            updateGunModel();
+        }
+        
+        function updateGunModel() {
+            while(currentGun.children.length > 0) {
+                currentGun.remove(currentGun.children[0]);
+            }
+            
+            const gunData = guns[currentGunType];
+            const isPacked = gunData.packed;
+            
+            const bodyColor = isPacked ? 0xff00ff : 0x222222;
+            const barrelColor = isPacked ? 0x00ffff : 0x333333;
+            
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(0.1, 0.1, 0.5),
+                new THREE.MeshStandardMaterial({ 
+                    color: bodyColor,
+                    emissive: isPacked ? bodyColor : 0x000000,
+                    emissiveIntensity: isPacked ? 0.5 : 0
+                })
+            );
+            body.position.z = -0.25;
+            currentGun.add(body);
+            
             const barrel = new THREE.Mesh(
                 new THREE.CylinderGeometry(0.02, 0.02, 0.3),
-                new THREE.MeshStandardMaterial({ color: 0x333333 })
+                new THREE.MeshStandardMaterial({ 
+                    color: barrelColor,
+                    emissive: isPacked ? barrelColor : 0x000000,
+                    emissiveIntensity: isPacked ? 0.5 : 0
+                })
             );
             barrel.rotation.x = Math.PI / 2;
             barrel.position.z = -0.55;
-            gun.add(barrel);
+            currentGun.add(barrel);
             
-            // Handle
             const handle = new THREE.Mesh(
                 new THREE.BoxGeometry(0.08, 0.15, 0.08),
                 new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
             );
             handle.position.set(0, -0.1, -0.15);
-            gun.add(handle);
+            currentGun.add(handle);
+            
+            document.getElementById('gunName').textContent = 
+                gunData.packed ? gunData.name + ' (PACKED)' : gunData.name;
         }
         
         function setupControllers() {
             controller1 = renderer.xr.getController(0);
             controller2 = renderer.xr.getController(1);
             
-            // Attach gun to right controller
-            controller2.add(gun);
+            controller2.add(currentGun);
             dolly.add(controller2);
             dolly.add(controller1);
             
-            // Trigger shooting
             controller2.addEventListener('selectstart', shoot);
+            controller2.addEventListener('squeezestart', interact);
+        }
+        
+        function interact() {
+            const controllerPos = new THREE.Vector3();
+            controller2.getWorldPosition(controllerPos);
+            
+            // Check wall guns
+            wallGuns.forEach(station => {
+                if (controllerPos.distanceTo(station.position) < 3) {
+                    if (points >= station.userData.cost) {
+                        points -= station.userData.cost;
+                        currentGunType = station.userData.gunType;
+                        const gunData = guns[currentGunType];
+                        ammo = gunData.maxAmmo;
+                        maxAmmo = gunData.maxAmmo;
+                        updateGunModel();
+                        updateHUD();
+                    }
+                }
+            });
+            
+            // Check Pack-a-Punch
+            if (packAPunchMachine && controllerPos.distanceTo(packAPunchMachine.position) < 3) {
+                if (points >= 5000 && !guns[currentGunType].packed) {
+                    points -= 5000;
+                    guns[currentGunType].packed = true;
+                    guns[currentGunType].damage *= 3;
+                    guns[currentGunType].fireRate = Math.max(50, guns[currentGunType].fireRate / 2);
+                    guns[currentGunType].maxAmmo *= 2;
+                    maxAmmo = guns[currentGunType].maxAmmo;
+                    ammo = maxAmmo;
+                    updateGunModel();
+                    updateHUD();
+                }
+            }
         }
         
         function shoot() {
-            // Create bullet
+            if (!canShoot || ammo <= 0) return;
+            
+            canShoot = false;
+            ammo--;
+            updateHUD();
+            
+            const gunData = guns[currentGunType];
+            setTimeout(() => { canShoot = true; }, gunData.fireRate);
+            
             const bullet = new THREE.Mesh(
                 new THREE.SphereGeometry(0.05),
-                new THREE.MeshBasicMaterial({ color: 0xffff00 })
+                new THREE.MeshBasicMaterial({ 
+                    color: gunData.packed ? 0xff00ff : 0xffff00 
+                })
             );
             
             const gunWorldPos = new THREE.Vector3();
-            gun.getWorldPosition(gunWorldPos);
+            currentGun.getWorldPosition(gunWorldPos);
             bullet.position.copy(gunWorldPos);
             
             const direction = new THREE.Vector3(0, 0, -1);
-            direction.applyQuaternion(gun.getWorldQuaternion(new THREE.Quaternion()));
+            direction.applyQuaternion(currentGun.getWorldQuaternion(new THREE.Quaternion()));
             bullet.userData.velocity = direction.multiplyScalar(1.5);
             bullet.userData.life = 60;
+            bullet.userData.damage = gunData.damage;
             
             scene.add(bullet);
             
-            // Muzzle flash
-            const flash = new THREE.PointLight(0xffaa00, 2, 3);
+            const flashColor = gunData.packed ? 0xff00ff : 0xffaa00;
+            const flash = new THREE.PointLight(flashColor, 2, 3);
             flash.position.copy(gunWorldPos);
             scene.add(flash);
             setTimeout(() => scene.remove(flash), 50);
+            
+            // Add points for shooting
+            points += 10;
+            updateHUD();
+        }
+        
+        function startRound(round) {
+            currentRound = round;
+            zombiesKilled = 0;
+            zombiesThisRound = 5 + (round - 1) * 3;
+            
+            const notice = document.getElementById('roundNotice');
+            notice.textContent = `ROUND ${round}`;
+            notice.style.display = 'block';
+            setTimeout(() => { notice.style.display = 'none'; }, 3000);
+            
+            for (let i = 0; i < zombiesThisRound; i++) {
+                setTimeout(() => spawnZombie(), i * 2000);
+            }
+            
+            updateHUD();
         }
         
         function spawnZombie() {
-            const zombie = new THREE.Mesh(
+            const zombie = new THREE.Group();
+            
+            const body = new THREE.Mesh(
                 new THREE.BoxGeometry(0.8, 1.8, 0.8),
                 new THREE.MeshStandardMaterial({ color: 0x00ff00 })
             );
+            zombie.add(body);
+            
+            const healthBarBg = new THREE.Mesh(
+                new THREE.PlaneGeometry(1, 0.1),
+                new THREE.MeshBasicMaterial({ color: 0x000000 })
+            );
+            healthBarBg.position.y = 1.2;
+            zombie.add(healthBarBg);
+            
+            const healthBar = new THREE.Mesh(
+                new THREE.PlaneGeometry(1, 0.08),
+                new THREE.MeshBasicMaterial({ color: 0xff0000 })
+            );
+            healthBar.position.set(0, 1.2, 0.01);
+            zombie.add(healthBar);
             
             const angle = Math.random() * Math.PI * 2;
             const distance = 20 + Math.random() * 10;
-            zombie.position.set(
-                Math.cos(angle) * distance,
-                0.9,
-                Math.sin(angle) * distance
-            );
+            zombie.position.set(Math.cos(angle) * distance, 0.9, Math.sin(angle) * distance);
             
-            zombie.userData.health = 3;
-            zombie.userData.speed = 0.02 + Math.random() * 0.02;
+            zombie.userData.health = 2 + currentRound;
+            zombie.userData.maxHealth = 2 + currentRound;
+            zombie.userData.speed = 0.015 + (currentRound * 0.003);
+            zombie.userData.healthBar = healthBar;
             
             scene.add(zombie);
             zombies.push(zombie);
-            
+            updateHUD();
+        }
+        
+        function updateHUD() {
+            document.getElementById('round').textContent = currentRound;
+            document.getElementById('score').textContent = score;
             document.getElementById('zombieCount').textContent = zombies.length;
+            document.getElementById('points').textContent = points;
+            document.getElementById('ammo').textContent = ammo + '/' + maxAmmo;
         }
         
         function animate() {
-            // Get current session and read joystick input
             const session = renderer.xr.getSession();
-            
             let debugText = 'VR Status: ';
             
             if (!session) {
-                debugText += 'Not in VR mode';
+                debugText += 'Not in VR';
                 document.getElementById('debug').textContent = debugText;
             } else {
                 debugText += 'In VR | Controllers: ' + session.inputSources.length + '\n';
                 
-                let leftFound = false;
-                let rightFound = false;
-                
-                // Process all input sources
                 for (let source of session.inputSources) {
                     const hand = source.handedness;
-                    debugText += `${hand} hand: `;
                     
                     if (source.gamepad) {
                         const axes = source.gamepad.axes;
-                        const buttons = source.gamepad.buttons;
-                        debugText += `${axes.length} axes, ${buttons.length} btns\n`;
-                        debugText += `  Axes: ${axes.map((v, i) => `${i}:${v.toFixed(2)}`).join(' ')}\n`;
                         
-                        // LEFT CONTROLLER - MOVEMENT
                         if (hand === 'left') {
-                            leftFound = true;
                             let x = 0, y = 0;
-                            
-                            // Try all possible axis configurations
                             if (axes.length >= 4) {
                                 x = axes[2];
                                 y = axes[3];
@@ -300,64 +455,39 @@
                                 y = axes[1];
                             }
                             
-                            debugText += `  Move: X=${x.toFixed(2)} Y=${y.toFixed(2)}\n`;
-                            
-                            // Check if joystick is being moved
                             if (Math.abs(x) > 0.15 || Math.abs(y) > 0.15) {
                                 const speed = 0.15;
-                                
-                                // Get camera direction
                                 const direction = new THREE.Vector3();
                                 camera.getWorldDirection(direction);
                                 direction.y = 0;
                                 direction.normalize();
                                 
-                                // Get right vector
                                 const right = new THREE.Vector3();
                                 right.crossVectors(direction, camera.up);
                                 right.normalize();
                                 
-                                // Move dolly
                                 dolly.position.add(direction.multiplyScalar(-y * speed));
                                 dolly.position.add(right.multiplyScalar(x * speed));
-                                
-                                debugText += `  MOVING! Pos: ${dolly.position.x.toFixed(1)},${dolly.position.z.toFixed(1)}\n`;
                             }
                         }
                         
-                        // RIGHT CONTROLLER - TURNING
                         if (hand === 'right') {
-                            rightFound = true;
                             let turnX = 0;
-                            
-                            // Try all possible axis configurations
                             if (axes.length >= 4) {
                                 turnX = axes[2];
                             } else if (axes.length >= 2) {
                                 turnX = axes[0];
                             }
                             
-                            debugText += `  Turn: X=${turnX.toFixed(2)}\n`;
-                            
-                            // Smooth turn when right joystick is moved left/right
                             if (Math.abs(turnX) > 0.2) {
                                 const turnSpeed = 0.02;
                                 dolly.rotation.y -= turnX * turnSpeed;
-                                debugText += `  TURNING! Rot: ${(dolly.rotation.y * 180 / Math.PI).toFixed(1)}°\n`;
                             }
                         }
-                    } else {
-                        debugText += 'No gamepad\n';
                     }
                 }
-                
-                if (!leftFound) debugText += 'LEFT CONTROLLER NOT FOUND!\n';
-                if (!rightFound) debugText += 'RIGHT CONTROLLER NOT FOUND!\n';
-                
-                document.getElementById('debug').textContent = debugText;
             }
             
-            // Update zombies
             zombies.forEach((zombie, index) => {
                 const direction = new THREE.Vector3();
                 direction.subVectors(dolly.position, zombie.position);
@@ -365,30 +495,35 @@
                 direction.normalize();
                 
                 zombie.position.add(direction.multiplyScalar(zombie.userData.speed));
-                zombie.lookAt(dolly.position);
+                zombie.lookAt(new THREE.Vector3(dolly.position.x, zombie.position.y, dolly.position.z));
+                
+                zombie.userData.healthBar.lookAt(camera.position);
             });
             
-            // Update bullets
             scene.children.forEach(child => {
                 if (child.userData.velocity) {
                     child.position.add(child.userData.velocity);
                     child.userData.life--;
                     
-                    // Check collision with zombies
                     zombies.forEach((zombie, zIndex) => {
                         if (child.position.distanceTo(zombie.position) < 1) {
-                            zombie.userData.health--;
+                            zombie.userData.health -= child.userData.damage;
                             scene.remove(child);
+                            
+                            const healthPercent = zombie.userData.health / zombie.userData.maxHealth;
+                            zombie.userData.healthBar.scale.x = Math.max(0, healthPercent);
                             
                             if (zombie.userData.health <= 0) {
                                 scene.remove(zombie);
                                 zombies.splice(zIndex, 1);
+                                zombiesKilled++;
                                 score += 100;
-                                document.getElementById('score').textContent = score;
-                                document.getElementById('zombieCount').textContent = zombies.length;
+                                points += 100;
+                                updateHUD();
                                 
-                                // Spawn new zombie
-                                if (Math.random() < 0.7) spawnZombie();
+                                if (zombiesKilled >= zombiesThisRound) {
+                                    setTimeout(() => startRound(currentRound + 1), 3000);
+                                }
                             }
                         }
                     });
@@ -398,11 +533,6 @@
                     }
                 }
             });
-            
-            // Spawn more zombies if needed
-            if (zombies.length < 3) {
-                spawnZombie();
-            }
             
             renderer.render(scene, camera);
         }
