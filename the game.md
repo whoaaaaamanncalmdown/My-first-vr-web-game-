@@ -3,16 +3,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>BO2 VR Prototype</title>
+  <title>BO2 VR Prototype - World Move</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script type="module">
     import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
     import { VRButton } from "https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js";
 
     let scene, camera, renderer, clock;
-    let playerRig;
     let leftController, rightController;
     let leftHandMesh, rightHandMesh, pistolMesh;
+
+    // Group that holds the whole map/world. We'll move THIS instead of the player.
+    let world;
 
     const forwardVec = new THREE.Vector3();
     const sideVec = new THREE.Vector3();
@@ -24,14 +26,17 @@
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x000000);
 
-      // CAMERA + RIG
-      camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
-      playerRig = new THREE.Group();
-      playerRig.position.set(0, 1.6, 0); // Start at human height
-      playerRig.add(camera);
-      scene.add(playerRig);
+      // Camera (headset pose gets applied on top of this)
+      camera = new THREE.PerspectiveCamera(
+        70,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        200
+      );
+      camera.position.set(0, 1.6, 0); // base height
+      scene.add(camera);
 
-      // LIGHTS
+      // Lights
       const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
       hemiLight.position.set(0, 50, 0);
       scene.add(hemiLight);
@@ -40,7 +45,11 @@
       dirLight.position.set(10, 20, 10);
       scene.add(dirLight);
 
-      // RENDERER
+      // World group that we will slide around
+      world = new THREE.Group();
+      scene.add(world);
+
+      // Renderer
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(window.devicePixelRatio);
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -49,7 +58,7 @@
       document.body.style.overflow = "hidden";
       document.body.appendChild(renderer.domElement);
 
-      // CUSTOM VR BUTTON
+      // Custom VR button
       const vrDomButton = VRButton.createButton(renderer);
       vrDomButton.style.display = "none";
       document.body.appendChild(vrDomButton);
@@ -86,7 +95,7 @@
       const floorMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
       const floor = new THREE.Mesh(floorGeo, floorMat);
       floor.rotation.x = -Math.PI / 2;
-      scene.add(floor);
+      world.add(floor);
 
       const wallMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
       addWall(0, 1.5, -floorSize / 2, floorSize, 3, 0.5, wallMat);
@@ -96,11 +105,17 @@
 
       const crateMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
       const crateGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
-      const positions = [ [-4, 0.6, -4], [4, 0.6, -4], [-4, 0.6, 4], [4, 0.6, 4], [0, 0.9, 0] ];
+      const positions = [
+        [-4, 0.6, -4],
+        [4, 0.6, -4],
+        [-4, 0.6, 4],
+        [4, 0.6, 4],
+        [0, 0.9, 0],
+      ];
       positions.forEach(([x, y, z]) => {
         const crate = new THREE.Mesh(crateGeo, crateMat);
         crate.position.set(x, y, z);
-        scene.add(crate);
+        world.add(crate);
       });
 
       scene.fog = new THREE.Fog(0x000000, 20, 60);
@@ -110,11 +125,11 @@
       const geo = new THREE.BoxGeometry(w, h, d);
       const wall = new THREE.Mesh(geo, mat);
       wall.position.set(x, y, z);
-      scene.add(wall);
+      world.add(wall);
     }
 
     function setupControllers() {
-      // LEFT CONTROLLER
+      // LEFT CONTROLLER (movement)
       leftController = renderer.xr.getController(0);
       leftController.addEventListener("connected", () => {
         leftHandMesh = createHandMesh(0x00ffcc);
@@ -124,9 +139,9 @@
         if (leftHandMesh) leftController.remove(leftHandMesh);
         leftHandMesh = null;
       });
-      playerRig.add(leftController);
+      scene.add(leftController);
 
-      // RIGHT CONTROLLER
+      // RIGHT CONTROLLER (pistol)
       rightController = renderer.xr.getController(1);
       rightController.addEventListener("connected", () => {
         rightHandMesh = createHandMesh(0xffcc00);
@@ -143,7 +158,7 @@
         rightHandMesh = null;
         pistolMesh = null;
       });
-      playerRig.add(rightController);
+      scene.add(rightController);
     }
 
     function createHandMesh(color) {
@@ -156,15 +171,27 @@
 
     function createPistolMesh() {
       const group = new THREE.Group();
-      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.08, 0.02), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+      const handle = new THREE.Mesh(
+        new THREE.BoxGeometry(0.03, 0.08, 0.02),
+        new THREE.MeshStandardMaterial({ color: 0x111111 })
+      );
       handle.position.set(0, -0.04, 0);
       group.add(handle);
-      const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.18), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+
+      const barrel = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.02, 0.18),
+        new THREE.MeshStandardMaterial({ color: 0x222222 })
+      );
       barrel.position.set(0, 0.0, -0.09);
       group.add(barrel);
-      const slide = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.14), new THREE.MeshStandardMaterial({ color: 0x555555 }));
+
+      const slide = new THREE.Mesh(
+        new THREE.BoxGeometry(0.03, 0.03, 0.14),
+        new THREE.MeshStandardMaterial({ color: 0x555555 })
+      );
       slide.position.set(0, 0.01, -0.08);
       group.add(slide);
+
       return group;
     }
 
@@ -188,24 +215,48 @@
       const session = renderer.xr.getSession();
       if (!session) return;
 
-      const speed = 3.0;
+      const speed = 4.0; // a bit faster
 
       for (const source of session.inputSources) {
         if (!source.gamepad || source.handedness !== "left") continue;
 
-        const [xAxis, yAxis] = source.gamepad.axes;
+        const axes = source.gamepad.axes;
+        if (!axes || axes.length === 0) continue;
+
+        // Try both common stick layouts [0,1] and [2,3]
+        let xAxis = 0;
+        let yAxis = 0;
+
+        if (axes.length >= 2) {
+          xAxis = axes[0];
+          yAxis = axes[1];
+        }
+        if (axes.length >= 4) {
+          // If second stick has a stronger signal, use that instead
+          const x2 = axes[2];
+          const y2 = axes[3];
+          if (Math.abs(x2) + Math.abs(y2) > Math.abs(xAxis) + Math.abs(yAxis)) {
+            xAxis = x2;
+            yAxis = y2;
+          }
+        }
+
         const deadzone = 0.15;
         if (Math.abs(xAxis) < deadzone && Math.abs(yAxis) < deadzone) continue;
 
+        // Get forward based on camera
         camera.getWorldDirection(forwardVec);
         forwardVec.y = 0;
         forwardVec.normalize();
 
+        // Side vector
         sideVec.crossVectors(camera.up, forwardVec).normalize();
 
         const moveAmount = speed * delta;
-        playerRig.position.addScaledVector(forwardVec, -yAxis * moveAmount);
-        playerRig.position.addScaledVector(sideVec, -xAxis * moveAmount);
+
+        // Move the WORLD opposite of the input -> feels like "you" move
+        world.position.addScaledVector(forwardVec, yAxis * moveAmount);
+        world.position.addScaledVector(sideVec, xAxis * moveAmount);
       }
     }
   </script>
