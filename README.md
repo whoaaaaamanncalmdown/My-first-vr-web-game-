@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -97,8 +98,8 @@
             
             createMap();
             createGun();
-            createInGameHUD();
             setupControllers();
+            createInGameHUD();
             createWallGuns();
             createPackAPunch();
             startRound(1);
@@ -118,19 +119,26 @@
             
             // Create texture from canvas
             hudTexture = new THREE.CanvasTexture(hudCanvas);
+            hudTexture.minFilter = THREE.LinearFilter;
+            hudTexture.magFilter = THREE.LinearFilter;
             
             // Create HUD mesh - positioned in bottom right of view
             const hudGeometry = new THREE.PlaneGeometry(0.6, 0.6);
             const hudMaterial = new THREE.MeshBasicMaterial({ 
                 map: hudTexture, 
                 transparent: true,
-                opacity: 1
+                depthTest: false,
+                depthWrite: false
             });
             hudMesh = new THREE.Mesh(hudGeometry, hudMaterial);
             hudMesh.position.set(0.4, -0.3, -0.8);
-            camera.add(hudMesh);
+            hudMesh.renderOrder = 999;
             
-            updateInGameHUD();
+            // Add to camera after a short delay to ensure camera is ready
+            setTimeout(() => {
+                camera.add(hudMesh);
+                updateInGameHUD();
+            }, 100);
         }
         
         function updateInGameHUD() {
