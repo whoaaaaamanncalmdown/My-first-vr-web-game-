@@ -262,13 +262,14 @@
             // Get current session and read joystick input
             const session = renderer.xr.getSession();
             if (session) {
+                // Left controller - movement
                 for (let source of session.inputSources) {
                     if (source.handedness === 'left' && source.gamepad) {
                         const axes = source.gamepad.axes;
                         
                         // Debug: show all axis values
                         document.getElementById('debug').textContent = 
-                            `Left Controller Axes: ${axes.map((v, i) => `[${i}]:${v.toFixed(2)}`).join(' ')}`;
+                            `Left Axes: ${axes.map((v, i) => `[${i}]:${v.toFixed(2)}`).join(' ')}`;
                         
                         // Try different axis configurations (different VR headsets use different indices)
                         let x = 0, y = 0;
@@ -302,6 +303,28 @@
                             // Move dolly
                             dolly.position.add(direction.multiplyScalar(-y * speed));
                             dolly.position.add(right.multiplyScalar(x * speed));
+                        }
+                    }
+                    
+                    // Right controller - smooth turning
+                    if (source.handedness === 'right' && source.gamepad) {
+                        const axes = source.gamepad.axes;
+                        
+                        let turnX = 0;
+                        
+                        // Quest/Meta uses axes 2 and 3
+                        if (axes.length >= 4) {
+                            turnX = axes[2];
+                        }
+                        // Some controllers use axes 0 and 1
+                        else if (axes.length >= 2) {
+                            turnX = axes[0];
+                        }
+                        
+                        // Smooth turn when right joystick is moved left/right
+                        if (Math.abs(turnX) > 0.2) {
+                            const turnSpeed = 0.02;
+                            dolly.rotation.y -= turnX * turnSpeed;
                         }
                     }
                 }
