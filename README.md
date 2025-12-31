@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,124 +6,153 @@
 <title>Web Gorilla VR</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-  body { margin: 0; overflow: hidden; }
-  #score {
+  body { margin: 0; overflow: hidden; background: black; }
+  #ui {
     position: absolute;
     top: 10px;
     left: 10px;
     color: white;
-    font-family: Arial;
+    font-family: Arial, sans-serif;
     font-size: 20px;
     z-index: 10;
   }
 </style>
 </head>
 <body>
-<div id="score">Score: 0</div>
+<div id="ui">Score: <span id="score">0</span></div>
 
 <script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js';
-import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js';
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js";
+import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js";
 
-let score = 0;
-const scoreDiv = document.getElementById("score");
-
+/* =======================
+   BASIC SETUP
+======================= */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 
-/* CAMERA + PLAYER */
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000);
-camera.position.set(0, 1.6, 0);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 1000);
 
-const player = new THREE.Group();
-player.add(camera);
-scene.add(player);
-
-/* RENDERER */
-const renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setSize(window.innerWidth, window.innerHeight);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
 renderer.xr.enabled = true;
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 
-/* LIGHT */
+/* =======================
+   XR RIG (IMPORTANT)
+======================= */
+const rig = new THREE.Group();
+scene.add(rig);
+rig.add(camera);
+
+/* =======================
+   LIGHTING
+======================= */
 scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 1.2));
 const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-sun.position.set(5,10,7);
+sun.position.set(5, 10, 7);
 scene.add(sun);
 
-/* FLOOR */
+/* =======================
+   FLOOR
+======================= */
 const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(100,100),
+  new THREE.PlaneGeometry(200, 200),
   new THREE.MeshStandardMaterial({ color: 0x55aa55 })
 );
-floor.rotation.x = -Math.PI/2;
+floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-/* CUBES (TARGETS) */
+/* =======================
+   TARGET CUBES
+======================= */
 const cubes = [];
-for (let i=0;i<20;i++){
+for (let i = 0; i < 20; i++) {
   const cube = new THREE.Mesh(
     new THREE.BoxGeometry(),
-    new THREE.MeshStandardMaterial({ color: 0xff4444 })
+    new THREE.MeshStandardMaterial({ color: 0xff3333 })
   );
   cube.position.set(
-    Math.random()*10-5,
-    Math.random()*3+1,
-    Math.random()*-10
+    Math.random() * 12 - 6,
+    Math.random() * 3 + 1,
+    Math.random() * -12
   );
   scene.add(cube);
   cubes.push(cube);
 }
 
-/* CONTROLLERS */
+/* =======================
+   CONTROLLERS
+======================= */
 const leftController = renderer.xr.getController(0);
 const rightController = renderer.xr.getController(1);
-scene.add(leftController, rightController);
+rig.add(leftController);
+rig.add(rightController);
 
-/* HANDS */
-function makeHand(color){
+/* =======================
+   HAND VISUALS
+======================= */
+function makeHand(color) {
   return new THREE.Mesh(
-    new THREE.SphereGeometry(0.08),
+    new THREE.SphereGeometry(0.08, 16, 16),
     new THREE.MeshStandardMaterial({ color })
   );
 }
-const leftHand = makeHand(0x2222ff);
-const rightHand = makeHand(0xff2222);
-leftController.add(leftHand);
-rightController.add(rightHand);
+leftController.add(makeHand(0x2222ff));
+rightController.add(makeHand(0xff2222));
 
-/* GORILLA LOCOMOTION */
-let lastLeftPos = new THREE.Vector3();
-let lastRightPos = new THREE.Vector3();
-const velocity = new THREE.Vector3();
-
-function applyGorilla(hand, lastPos){
-  const worldPos = new THREE.Vector3();
-  hand.getWorldPosition(worldPos);
-
-  if (worldPos.y < 1.1) { // touching ground
-    const delta = worldPos.clone().sub(lastPos);
-    velocity.sub(delta.multiplyScalar(1.2));
-  }
-  lastPos.copy(worldPos);
-}
-
-/* GUN */
+/* =======================
+   FAKE GUN
+======================= */
 const gun = new THREE.Mesh(
-  new THREE.BoxGeometry(0.04,0.04,0.25),
+  new THREE.BoxGeometry(0.04, 0.04, 0.25),
   new THREE.MeshStandardMaterial({ color: 0x333333 })
 );
-gun.position.set(0,0,-0.15);
+gun.position.set(0, 0, -0.15);
 rightController.add(gun);
 
-/* SHOOTING */
+/* =======================
+   GORILLA LOCOMOTION (FIXED)
+======================= */
+const prevLeft = new THREE.Vector3();
+const prevRight = new THREE.Vector3();
+const velocity = new THREE.Vector3();
+
+const MAX_SPEED = 0.15;
+const DAMPING = 0.88;
+const PUSH_FORCE = 1.4;
+const GROUND_Y = 1.2;
+
+function gorillaStep(controller, prevPos) {
+  const world = new THREE.Vector3();
+  controller.getWorldPosition(world);
+
+  const local = world.clone();
+  rig.worldToLocal(local);
+
+  if (local.y < GROUND_Y) {
+    const delta = local.clone().sub(prevPos);
+    velocity.sub(delta.multiplyScalar(PUSH_FORCE));
+  }
+
+  prevPos.copy(local);
+}
+
+/* =======================
+   SHOOTING + SCORE
+======================= */
+let score = 0;
+const scoreText = document.getElementById("score");
 const raycaster = new THREE.Raycaster();
 
 rightController.addEventListener("selectstart", () => {
-  const dir = new THREE.Vector3(0,0,-1).applyQuaternion(rightController.quaternion);
   const origin = new THREE.Vector3();
   rightController.getWorldPosition(origin);
+
+  const dir = new THREE.Vector3(0, 0, -1)
+    .applyQuaternion(rightController.quaternion)
+    .normalize();
 
   raycaster.set(origin, dir);
   const hits = raycaster.intersectObjects(cubes);
@@ -130,28 +160,33 @@ rightController.addEventListener("selectstart", () => {
   if (hits.length > 0) {
     const hit = hits[0].object;
     scene.remove(hit);
-    cubes.splice(cubes.indexOf(hit),1);
+    cubes.splice(cubes.indexOf(hit), 1);
     score++;
-    scoreDiv.textContent = "Score: " + score;
+    scoreText.textContent = score;
   }
 });
 
-/* LOOP */
+/* =======================
+   MAIN LOOP
+======================= */
 renderer.setAnimationLoop(() => {
-  applyGorilla(leftController, lastLeftPos);
-  applyGorilla(rightController, lastRightPos);
+  gorillaStep(leftController, prevLeft);
+  gorillaStep(rightController, prevRight);
 
-  velocity.multiplyScalar(0.92);
-  player.position.add(velocity);
+  velocity.multiplyScalar(DAMPING);
+  velocity.clampLength(0, MAX_SPEED);
+  rig.position.add(velocity);
 
   renderer.render(scene, camera);
 });
 
-/* RESIZE */
-window.addEventListener("resize", ()=>{
-  camera.aspect = window.innerWidth/window.innerHeight;
+/* =======================
+   RESIZE
+======================= */
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(innerWidth, innerHeight);
 });
 </script>
 </body>
