@@ -2,179 +2,317 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>BO2 VR Prototype</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/VRButton.js"></script>
-</head>
-<body style="margin:0; overflow:hidden; background:#000;">
-<script>
-  let scene, camera, renderer, clock;
-  let leftController, rightController;
-  let leftHand, rightHand, gun;
+    <meta charset="UTF-8" />
+    <title>BO2 VR Prototype</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  init();
-  animate();
+    <!-- Three.js (module version) -->
+    <script type="module">
+        import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+        import { VRButton } from "https://unpkg.com/three@0.160.0/examples/jsm/webxr/VRButton.js";
 
-  function init() {
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x101010);
+        let scene, camera, renderer, clock;
+        let playerRig;
+        let leftController, rightController;
+        let leftHandMesh, rightHandMesh, pistolMesh;
 
-    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+        // Temp vectors reused each frame
+        const forwardVec = new THREE.Vector3();
+        const sideVec = new THREE.Vector3();
 
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
-    hemiLight.position.set(0, 20, 0);
-    scene.add(hemiLight);
+        init();
+        animate();
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(5, 10, 2);
-    scene.add(dirLight);
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.xr.enabled = true;
-    document.body.appendChild(renderer.domElement);
+            // Camera + player rig (so we move the rig, not the camera directly)
+            camera = new THREE.PerspectiveCamera(
+                70,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                200
+            );
 
-    // ✅ Add the "Enter VR" button
-    document.body.appendChild(THREE.VRButton.createButton(renderer));
+            playerRig = new THREE.Group();
+            playerRig.add(camera);
+            scene.add(playerRig);
 
-    clock = new THREE.Clock();
+            // Lights
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+            hemiLight.position.set(0, 50, 0);
+            scene.add(hemiLight);
 
-    createMap();
-    setupControllers();
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+            dirLight.position.set(10, 20, 10);
+            scene.add(dirLight);
 
-    window.addEventListener("resize", onWindowResize, false);
-  }
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            document.body.style.margin = "0";
+            document.body.style.overflow = "hidden";
+            document.body.appendChild(renderer.domElement);
 
-  function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  }
+            // Custom "Play in VR" button using VRButton under the hood
+            const vrDomButton = VRButton.createButton(renderer);
+            vrDomButton.style.display = "none"; // hide default
+            document.body.appendChild(vrDomButton);
 
-  function createMap() {
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(20, 20),
-      new THREE.MeshStandardMaterial({ color: 0x303030, roughness: 1 })
-    );
-    floor.rotation.x = -Math.PI / 2;
-    scene.add(floor);
+            const customBtn = document.createElement("button");
+            customBtn.textContent = "Play in VR";
+            customBtn.style.position = "absolute";
+            customBtn.style.bottom = "20px";
+            customBtn.style.left = "50%";
+            customBtn.style.transform = "translateX(-50%)";
+            customBtn.style.padding = "12px 24px";
+            customBtn.style.fontSize = "18px";
+            customBtn.style.borderRadius = "8px";
+            customBtn.style.border = "none";
+            customBtn.style.cursor = "pointer";
+            customBtn.style.background = "#00bcd4";
+            customBtn.style.color = "#000";
+            customBtn.style.fontFamily = "system-ui, sans-serif";
+            customBtn.style.zIndex = "10";
 
-    function addWall(x, z, w, h, d) {
-      const wall = new THREE.Mesh(
-        new THREE.BoxGeometry(w, h, d),
-        new THREE.MeshStandardMaterial({ color: 0x555555 })
-      );
-      wall.position.set(x, h / 2, z);
-      scene.add(wall);
-    }
+            customBtn.onclick = () => {
+                // Trigger the hidden VRButton
+                vrDomButton.click();
+            };
 
-    addWall(0, -5, 8, 2.5, 0.4);
-    addWall(-5, 0, 0.4, 2.5, 8);
-    addWall(5, 0, 0.4, 2.5, 8);
-    addWall(0, 5, 8, 2.5, 0.4);
+            document.body.appendChild(customBtn);
 
-    function addBox(x, z) {
-      const box = new THREE.Mesh(
-        new THREE.BoxGeometry(1, 1, 1),
-        new THREE.MeshStandardMaterial({ color: 0x777777 })
-      );
-      box.position.set(x, 0.5, z);
-      scene.add(box);
-    }
+            // Clock
+            clock = new THREE.Clock();
 
-    addBox(-2, -2);
-    addBox(2, -1);
-    addBox(0, 2);
-  }
+            // Build the map
+            createMap();
 
-  function setupControllers() {
-    leftController = renderer.xr.getController(0);
-    rightController = renderer.xr.getController(1);
-    scene.add(leftController);
-    scene.add(rightController);
+            // VR controllers / hands / pistol
+            setupControllers();
 
-    const handGeo = new THREE.BoxGeometry(0.08, 0.08, 0.2);
-    const leftMat = new THREE.MeshStandardMaterial({ color: 0x00aaff });
-    const rightMat = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
-
-    leftHand = new THREE.Mesh(handGeo, leftMat);
-    rightHand = new THREE.Mesh(handGeo, rightMat);
-
-    leftController.add(leftHand);
-    rightController.add(rightHand);
-
-    leftHand.position.set(0, 0, 0);
-    rightHand.position.set(0, 0, 0);
-
-    const gunGeo = new THREE.BoxGeometry(0.25, 0.12, 0.4);
-    const gunMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-    gun = new THREE.Mesh(gunGeo, gunMat);
-    rightHand.add(gun);
-    gun.position.set(0, -0.05, -0.25);
-  }
-
-  function animate() {
-    renderer.setAnimationLoop(render);
-  }
-
-  function render() {
-    const delta = clock.getDelta();
-    handleMovement(delta);
-    renderer.render(scene, camera);
-  }
-
-  function handleMovement(delta) {
-    const session = renderer.xr.getSession();
-    if (!session) return;
-
-    const speed = 2.0;
-    const inputSources = session.inputSources;
-
-    for (const source of inputSources) {
-      if (!source.gamepad) continue;
-      const gp = source.gamepad;
-      const axes = gp.axes || [];
-
-      let xAxis = 0;
-      let yAxis = 0;
-      const pairs = [[0, 1], [2, 3]];
-      let bestMag = 0;
-      let bestPair = [0, 1];
-
-      for (const p of pairs) {
-        const ax = axes[p[0]] || 0;
-        const ay = axes[p[1]] || 0;
-        const mag = Math.sqrt(ax * ax + ay * ay);
-        if (mag > bestMag) {
-          bestMag = mag;
-          bestPair = p;
+            // Handle window resize
+            window.addEventListener("resize", onWindowResize);
         }
-      }
 
-      xAxis = axes[bestPair[0]] || 0;
-      yAxis = axes[bestPair[1]] || 0;
+        function createMap() {
+            // Floor (big square arena)
+            const floorSize = 40;
+            const floorGeo = new THREE.PlaneGeometry(floorSize, floorSize);
+            const floorMat = new THREE.MeshStandardMaterial({
+                color: 0x222222,
+                metalness: 0.1,
+                roughness: 0.8
+            });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
 
-      if (source.handedness === "left") {
-        const xrCamera = renderer.xr.getCamera(camera);
-        const dir = new THREE.Vector3();
-        xrCamera.getWorldDirection(dir);
-        dir.y = 0;
-        dir.normalize();
+            // Perimeter walls (simple BO2-ish arena)
+            const wallHeight = 3;
+            const wallThickness = 0.5;
+            const wallColor = 0x333333;
+            const wallMat = new THREE.MeshStandardMaterial({
+                color: wallColor,
+                metalness: 0.2,
+                roughness: 0.7
+            });
 
-        const right = new THREE.Vector3();
-        right.crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+            // Front wall
+            addWall(0, wallHeight / 2, -floorSize / 2, floorSize, wallHeight, wallThickness, wallMat);
+            // Back wall
+            addWall(0, wallHeight / 2, floorSize / 2, floorSize, wallHeight, wallThickness, wallMat);
+            // Left wall
+            addWall(-floorSize / 2, wallHeight / 2, 0, wallThickness, wallHeight, floorSize, wallMat);
+            // Right wall
+            addWall(floorSize / 2, wallHeight / 2, 0, wallThickness, wallHeight, floorSize, wallMat);
 
-        const moveForward = dir.multiplyScalar(-yAxis * speed * delta);
-        const moveRight = right.multiplyScalar(xAxis * speed * delta);
-        const move = moveForward.add(moveRight);
+            // Cover objects in the middle (like boxes / crates)
+            const coverMat = new THREE.MeshStandardMaterial({
+                color: 0x555555,
+                metalness: 0.3,
+                roughness: 0.6
+            });
 
-        camera.position.add(move);
-      }
-    }
-  }
-</script>
-</body>
+            const crateGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+
+            const cratePositions = [
+                [ -4, 0.6, -4 ],
+                [  4, 0.6, -4 ],
+                [ -4, 0.6,  4 ],
+                [  4, 0.6,  4 ],
+                [  0, 0.9,  0 ]
+            ];
+
+            cratePositions.forEach(([x, y, z]) => {
+                const crate = new THREE.Mesh(crateGeo, coverMat);
+                crate.position.set(x, y, z);
+                crate.castShadow = true;
+                crate.receiveShadow = true;
+                scene.add(crate);
+            });
+
+            // Slight fog for mood
+            scene.fog = new THREE.Fog(0x000000, 20, 60);
+        }
+
+        function addWall(x, y, z, w, h, d, mat) {
+            const geo = new THREE.BoxGeometry(w, h, d);
+            const wall = new THREE.Mesh(geo, mat);
+            wall.position.set(x, y, z);
+            wall.castShadow = true;
+            wall.receiveShadow = true;
+            scene.add(wall);
+        }
+
+        function setupControllers() {
+            // LEFT CONTROLLER (movement)
+            leftController = renderer.xr.getController(0);
+            leftController.addEventListener("connected", (event) => {
+                // Simple hand mesh for left
+                leftHandMesh = createHandMesh(0x00ffcc);
+                leftController.add(leftHandMesh);
+            });
+            leftController.addEventListener("disconnected", () => {
+                if (leftHandMesh) leftController.remove(leftHandMesh);
+                leftHandMesh = null;
+            });
+            scene.add(leftController);
+
+            // RIGHT CONTROLLER (pistol)
+            rightController = renderer.xr.getController(1);
+            rightController.addEventListener("connected", (event) => {
+                // Right hand
+                rightHandMesh = createHandMesh(0xffcc00);
+                rightController.add(rightHandMesh);
+
+                // Pistol mesh attached to right hand
+                pistolMesh = createPistolMesh();
+                pistolMesh.position.set(0, -0.03, -0.15);
+                pistolMesh.rotation.x = -Math.PI / 2;
+                rightController.add(pistolMesh);
+            });
+            rightController.addEventListener("disconnected", () => {
+                if (rightHandMesh) rightController.remove(rightHandMesh);
+                if (pistolMesh) rightController.remove(pistolMesh);
+                rightHandMesh = null;
+                pistolMesh = null;
+            });
+            scene.add(rightController);
+        }
+
+        function createHandMesh(color) {
+            const geo = new THREE.BoxGeometry(0.06, 0.1, 0.16);
+            const mat = new THREE.MeshStandardMaterial({
+                color,
+                metalness: 0.0,
+                roughness: 0.7
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(0, -0.03, -0.05);
+            return mesh;
+        }
+
+        function createPistolMesh() {
+            const group = new THREE.Group();
+
+            // Handle
+            const handleGeo = new THREE.BoxGeometry(0.03, 0.08, 0.02);
+            const handleMat = new THREE.MeshStandardMaterial({
+                color: 0x111111,
+                metalness: 0.5,
+                roughness: 0.4
+            });
+            const handle = new THREE.Mesh(handleGeo, handleMat);
+            handle.position.set(0, -0.04, 0);
+            group.add(handle);
+
+            // Barrel
+            const barrelGeo = new THREE.BoxGeometry(0.02, 0.02, 0.18);
+            const barrelMat = new THREE.MeshStandardMaterial({
+                color: 0x222222,
+                metalness: 0.7,
+                roughness: 0.3
+            });
+            const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+            barrel.position.set(0, 0.0, -0.09);
+            group.add(barrel);
+
+            // Slide
+            const slideGeo = new THREE.BoxGeometry(0.03, 0.03, 0.14);
+            const slideMat = new THREE.MeshStandardMaterial({
+                color: 0x555555,
+                metalness: 0.8,
+                roughness: 0.3
+            });
+            const slide = new THREE.Mesh(slideGeo, slideMat);
+            slide.position.set(0, 0.01, -0.08);
+            group.add(slide);
+
+            return group;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            renderer.setAnimationLoop(renderLoop);
+        }
+
+        function renderLoop() {
+            const delta = clock.getDelta();
+
+            // Movement with left joystick
+            handleLeftJoystickMovement(delta);
+
+            renderer.render(scene, camera);
+        }
+
+        function handleLeftJoystickMovement(delta) {
+            const session = renderer.xr.getSession();
+            if (!session) return;
+
+            const speed = 3.0; // meters per second
+
+            for (const source of session.inputSources) {
+                if (!source.gamepad) continue;
+                if (source.handedness !== "left") continue;
+
+                const axes = source.gamepad.axes;
+                if (axes.length < 2) continue;
+
+                const xAxis = axes[0]; // left/right
+                const yAxis = axes[1]; // forward/back (usually -forward, +back)
+
+                // Only move if stick is actually being used
+                const deadzone = 0.15;
+                if (Math.abs(xAxis) < deadzone && Math.abs(yAxis) < deadzone) {
+                    continue;
+                }
+
+                // Forward direction based on camera
+                camera.getWorldDirection(forwardVec);
+                forwardVec.y = 0;
+                forwardVec.normalize();
+
+                // Side direction
+                sideVec.crossVectors(camera.up, forwardVec).normalize();
+
+                // Move rig (not camera directly)
+                const moveAmount = speed * delta;
+                playerRig.position.addScaledVector(forwardVec, -yAxis * moveAmount);
+                playerRig.position.addScaledVector(sideVec, -xAxis * moveAmount);
+            }
+        }
+    </script>
+</head>
+<body></body>
 </html>
