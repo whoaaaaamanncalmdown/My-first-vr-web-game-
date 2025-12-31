@@ -83,6 +83,7 @@
             console.log('Scene created');
             
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.6, 0); // Eye level
             
             // Dolly for movement
             dolly = new THREE.Group();
@@ -147,6 +148,11 @@
             hudCanvas.width = 512;
             hudCanvas.height = 512;
             
+            // Draw initial content
+            const ctx = hudCanvas.getContext('2d');
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(20, 20, 472, 472);
+            
             // Create texture from canvas
             hudTexture = new THREE.CanvasTexture(hudCanvas);
             hudTexture.minFilter = THREE.LinearFilter;
@@ -164,11 +170,8 @@
             hudMesh.position.set(0.4, -0.3, -0.8);
             hudMesh.renderOrder = 999;
             
-            // Add to camera after a short delay to ensure camera is ready
-            setTimeout(() => {
-                camera.add(hudMesh);
-                updateInGameHUD();
-            }, 100);
+            camera.add(hudMesh);
+            updateInGameHUD();
         }
         
         function updateInGameHUD() {
