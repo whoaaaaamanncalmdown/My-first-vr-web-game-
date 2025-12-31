@@ -24,11 +24,14 @@
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x000000);
 
+      // CAMERA + RIG
       camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
       playerRig = new THREE.Group();
+      playerRig.position.set(0, 1.6, 0); // Start at human height
       playerRig.add(camera);
       scene.add(playerRig);
 
+      // LIGHTS
       const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
       hemiLight.position.set(0, 50, 0);
       scene.add(hemiLight);
@@ -37,6 +40,7 @@
       dirLight.position.set(10, 20, 10);
       scene.add(dirLight);
 
+      // RENDERER
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(window.devicePixelRatio);
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -45,6 +49,7 @@
       document.body.style.overflow = "hidden";
       document.body.appendChild(renderer.domElement);
 
+      // CUSTOM VR BUTTON
       const vrDomButton = VRButton.createButton(renderer);
       vrDomButton.style.display = "none";
       document.body.appendChild(vrDomButton);
@@ -109,6 +114,7 @@
     }
 
     function setupControllers() {
+      // LEFT CONTROLLER
       leftController = renderer.xr.getController(0);
       leftController.addEventListener("connected", () => {
         leftHandMesh = createHandMesh(0x00ffcc);
@@ -118,12 +124,14 @@
         if (leftHandMesh) leftController.remove(leftHandMesh);
         leftHandMesh = null;
       });
-      scene.add(leftController);
+      playerRig.add(leftController);
 
+      // RIGHT CONTROLLER
       rightController = renderer.xr.getController(1);
       rightController.addEventListener("connected", () => {
         rightHandMesh = createHandMesh(0xffcc00);
         rightController.add(rightHandMesh);
+
         pistolMesh = createPistolMesh();
         pistolMesh.position.set(0, -0.03, -0.15);
         pistolMesh.rotation.x = -Math.PI / 2;
@@ -135,7 +143,7 @@
         rightHandMesh = null;
         pistolMesh = null;
       });
-      scene.add(rightController);
+      playerRig.add(rightController);
     }
 
     function createHandMesh(color) {
@@ -184,17 +192,23 @@
 
       for (const source of session.inputSources) {
         if (!source.gamepad || source.handedness !== "left") continue;
-        const axes = source.gamepad.axes;
-        if (axes.length < 2) continue;
 
-        const xAxis = axes[0];
-        const yAxis = axes[1];
+        const [xAxis, yAxis] = source.gamepad.axes;
         const deadzone = 0.15;
         if (Math.abs(xAxis) < deadzone && Math.abs(yAxis) < deadzone) continue;
 
         camera.getWorldDirection(forwardVec);
         forwardVec.y = 0;
         forwardVec.normalize();
+
         sideVec.crossVectors(camera.up, forwardVec).normalize();
 
         const moveAmount = speed * delta;
+        playerRig.position.addScaledVector(forwardVec, -yAxis * moveAmount);
+        playerRig.position.addScaledVector(sideVec, -xAxis * moveAmount);
+      }
+    }
+  </script>
+</head>
+<body></body>
+</html>
