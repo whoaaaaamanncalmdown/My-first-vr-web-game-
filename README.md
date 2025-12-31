@@ -90,7 +90,7 @@ gun.position.set(0, 0, -0.15);
 rightController.add(gun);
 
 /* =======================
-   GORILLA LOCOMOTION (NEW CODE)
+   GORILLA LOCOMOTION (FIXED)
 ======================= */
 const prevLeft = new THREE.Vector3();
 const prevRight = new THREE.Vector3();
@@ -128,49 +128,33 @@ function gorillaStep(controller, prevPos, handVel) {
 }
 
 /* =======================
-   SHOOTING + SCORE
-======================= */
-let score = 0;
-const scoreText = document.getElementById("score");
-const raycaster = new THREE.Raycaster();
-
-rightController.addEventListener("selectstart", () => {
-  const origin = new THREE.Vector3();
-  rightController.getWorldPosition(origin);
-
-  const dir = new THREE.Vector3(0, 0, -1)
-    .applyQuaternion(rightController.quaternion)
-    .normalize();
-
-  raycaster.set(origin, dir);
-  const hits = raycaster.intersectObjects(cubes);
-
-  if (hits.length > 0) {
-    const hit = hits[0].object;
-    scene.remove(hit);
-    cubes.splice(cubes.indexOf(hit), 1);
-    score++;
-    scoreText.textContent = score;
-  }
-});
-
-/* =======================
-   MAIN LOOP (NEW ANIMATION LOOP)
+   MAIN LOOP (FIXED ANIMATION LOOP)
 ======================= */
 renderer.setAnimationLoop(() => {
   targetVelocity.set(0, 0, 0);
 
+  // Update the hand velocities using the gorillaStep function
   gorillaStep(leftController, prevLeft, handVelLeft);
   gorillaStep(rightController, prevRight, handVelRight);
 
   // Smooth body velocity
   bodyVelocity.lerp(targetVelocity, BODY_SMOOTH);
 
+  // Apply friction to slow down movement
   bodyVelocity.multiplyScalar(FRICTION);
+
+  // Clamp the speed to MAX_SPEED
   bodyVelocity.clampLength(0, MAX_SPEED);
 
+  // Update the rig's position based on the velocity
   rig.position.add(bodyVelocity);
 
+  // Ensure the rig stays above the ground (clamp Y position)
+  if (rig.position.y < CONTACT_Y) {
+    rig.position.y = CONTACT_Y;
+  }
+
+  // Render the scene
   renderer.render(scene, camera);
 });
 
