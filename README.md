@@ -1,25 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Web Gorilla VR</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-  body { margin: 0; overflow: hidden; background: black; }
-  #ui {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    color: white;
-    font-family: Arial, sans-serif;
-    font-size: 20px;
-    z-index: 10;
-  }
-</style>
-</head>
-<body>
-<div id="ui">Score: <span id="score">0</span></div>
-
 <script type="module">
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js";
 import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js";
@@ -112,27 +90,38 @@ gun.position.set(0, 0, -0.15);
 rightController.add(gun);
 
 /* =======================
-   GORILLA LOCOMOTION (FIXED)
+   GORILLA LOCOMOTION (NEW CODE)
 ======================= */
 const prevLeft = new THREE.Vector3();
 const prevRight = new THREE.Vector3();
-const velocity = new THREE.Vector3();
+const handVelLeft = new THREE.Vector3();
+const handVelRight = new THREE.Vector3();
+const bodyVelocity = new THREE.Vector3();
+const targetVelocity = new THREE.Vector3();
 
-const MAX_SPEED = 0.15;
-const DAMPING = 0.88;
-const PUSH_FORCE = 1.4;
-const GROUND_Y = 1.2;
+/* TUNING (SMOOTH FEEL) */
+const CONTACT_Y = 1.4;
+const PUSH_FORCE = 2.0;
+const MAX_SPEED = 0.25;
+const HAND_SMOOTH = 0.25;  // higher = smoother hands
+const BODY_SMOOTH = 0.18;  // higher = smoother body
+const FRICTION = 0.985;    // closer to 1 = more glide
+const DEADZONE = 0.002;    // minimum speed for movement to count
 
-function gorillaStep(controller, prevPos) {
+function gorillaStep(controller, prevPos, handVel) {
   const world = new THREE.Vector3();
   controller.getWorldPosition(world);
 
   const local = world.clone();
   rig.worldToLocal(local);
 
-  if (local.y < GROUND_Y) {
-    const delta = local.clone().sub(prevPos);
-    velocity.sub(delta.multiplyScalar(PUSH_FORCE));
+  const delta = local.clone().sub(prevPos);
+
+  // Smooth hand velocity
+  handVel.lerp(delta, HAND_SMOOTH);
+
+  if (local.y < CONTACT_Y && handVel.lengthSq() > DEADZONE) {
+    targetVelocity.sub(handVel.clone().multiplyScalar(PUSH_FORCE));
   }
 
   prevPos.copy(local);
@@ -166,15 +155,21 @@ rightController.addEventListener("selectstart", () => {
 });
 
 /* =======================
-   MAIN LOOP
+   MAIN LOOP (NEW ANIMATION LOOP)
 ======================= */
 renderer.setAnimationLoop(() => {
-  gorillaStep(leftController, prevLeft);
-  gorillaStep(rightController, prevRight);
+  targetVelocity.set(0, 0, 0);
 
-  velocity.multiplyScalar(DAMPING);
-  velocity.clampLength(0, MAX_SPEED);
-  rig.position.add(velocity);
+  gorillaStep(leftController, prevLeft, handVelLeft);
+  gorillaStep(rightController, prevRight, handVelRight);
+
+  // Smooth body velocity
+  bodyVelocity.lerp(targetVelocity, BODY_SMOOTH);
+
+  bodyVelocity.multiplyScalar(FRICTION);
+  bodyVelocity.clampLength(0, MAX_SPEED);
+
+  rig.position.add(bodyVelocity);
 
   renderer.render(scene, camera);
 });
@@ -188,6 +183,4 @@ addEventListener("resize", () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 </script>
-</body>
-</html>
 
