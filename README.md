@@ -47,8 +47,10 @@
             background: rgba(0,0,0,0.5);
             padding: 10px;
             border-radius: 5px;
-            font-size: 12px;
+            font-size: 11px;
             font-family: monospace;
+            max-width: 400px;
+            line-height: 1.4;
         }
     </style>
 </head>
@@ -261,73 +263,98 @@
         function animate() {
             // Get current session and read joystick input
             const session = renderer.xr.getSession();
-            if (session) {
-                // Left controller - movement
+            
+            let debugText = 'VR Status: ';
+            
+            if (!session) {
+                debugText += 'Not in VR mode';
+                document.getElementById('debug').textContent = debugText;
+            } else {
+                debugText += 'In VR | Controllers: ' + session.inputSources.length + '\n';
+                
+                let leftFound = false;
+                let rightFound = false;
+                
+                // Process all input sources
                 for (let source of session.inputSources) {
-                    if (source.handedness === 'left' && source.gamepad) {
-                        const axes = source.gamepad.axes;
-                        
-                        // Debug: show all axis values
-                        document.getElementById('debug').textContent = 
-                            `Left Axes: ${axes.map((v, i) => `[${i}]:${v.toFixed(2)}`).join(' ')}`;
-                        
-                        // Try different axis configurations (different VR headsets use different indices)
-                        let x = 0, y = 0;
-                        
-                        // Quest/Meta uses axes 2 and 3
-                        if (axes.length >= 4) {
-                            x = axes[2];
-                            y = axes[3];
-                        }
-                        // Some controllers use axes 0 and 1
-                        else if (axes.length >= 2) {
-                            x = axes[0];
-                            y = axes[1];
-                        }
-                        
-                        // Check if joystick is being moved
-                        if (Math.abs(x) > 0.1 || Math.abs(y) > 0.1) {
-                            const speed = 0.15;
-                            
-                            // Get camera direction
-                            const direction = new THREE.Vector3();
-                            camera.getWorldDirection(direction);
-                            direction.y = 0;
-                            direction.normalize();
-                            
-                            // Get right vector
-                            const right = new THREE.Vector3();
-                            right.crossVectors(direction, camera.up);
-                            right.normalize();
-                            
-                            // Move dolly
-                            dolly.position.add(direction.multiplyScalar(-y * speed));
-                            dolly.position.add(right.multiplyScalar(x * speed));
-                        }
-                    }
+                    const hand = source.handedness;
+                    debugText += `${hand} hand: `;
                     
-                    // Right controller - smooth turning
-                    if (source.handedness === 'right' && source.gamepad) {
+                    if (source.gamepad) {
                         const axes = source.gamepad.axes;
+                        const buttons = source.gamepad.buttons;
+                        debugText += `${axes.length} axes, ${buttons.length} btns\n`;
+                        debugText += `  Axes: ${axes.map((v, i) => `${i}:${v.toFixed(2)}`).join(' ')}\n`;
                         
-                        let turnX = 0;
+                        // LEFT CONTROLLER - MOVEMENT
+                        if (hand === 'left') {
+                            leftFound = true;
+                            let x = 0, y = 0;
+                            
+                            // Try all possible axis configurations
+                            if (axes.length >= 4) {
+                                x = axes[2];
+                                y = axes[3];
+                            } else if (axes.length >= 2) {
+                                x = axes[0];
+                                y = axes[1];
+                            }
+                            
+                            debugText += `  Move: X=${x.toFixed(2)} Y=${y.toFixed(2)}\n`;
+                            
+                            // Check if joystick is being moved
+                            if (Math.abs(x) > 0.15 || Math.abs(y) > 0.15) {
+                                const speed = 0.15;
+                                
+                                // Get camera direction
+                                const direction = new THREE.Vector3();
+                                camera.getWorldDirection(direction);
+                                direction.y = 0;
+                                direction.normalize();
+                                
+                                // Get right vector
+                                const right = new THREE.Vector3();
+                                right.crossVectors(direction, camera.up);
+                                right.normalize();
+                                
+                                // Move dolly
+                                dolly.position.add(direction.multiplyScalar(-y * speed));
+                                dolly.position.add(right.multiplyScalar(x * speed));
+                                
+                                debugText += `  MOVING! Pos: ${dolly.position.x.toFixed(1)},${dolly.position.z.toFixed(1)}\n`;
+                            }
+                        }
                         
-                        // Quest/Meta uses axes 2 and 3
-                        if (axes.length >= 4) {
-                            turnX = axes[2];
+                        // RIGHT CONTROLLER - TURNING
+                        if (hand === 'right') {
+                            rightFound = true;
+                            let turnX = 0;
+                            
+                            // Try all possible axis configurations
+                            if (axes.length >= 4) {
+                                turnX = axes[2];
+                            } else if (axes.length >= 2) {
+                                turnX = axes[0];
+                            }
+                            
+                            debugText += `  Turn: X=${turnX.toFixed(2)}\n`;
+                            
+                            // Smooth turn when right joystick is moved left/right
+                            if (Math.abs(turnX) > 0.2) {
+                                const turnSpeed = 0.02;
+                                dolly.rotation.y -= turnX * turnSpeed;
+                                debugText += `  TURNING! Rot: ${(dolly.rotation.y * 180 / Math.PI).toFixed(1)}°\n`;
+                            }
                         }
-                        // Some controllers use axes 0 and 1
-                        else if (axes.length >= 2) {
-                            turnX = axes[0];
-                        }
-                        
-                        // Smooth turn when right joystick is moved left/right
-                        if (Math.abs(turnX) > 0.2) {
-                            const turnSpeed = 0.02;
-                            dolly.rotation.y -= turnX * turnSpeed;
-                        }
+                    } else {
+                        debugText += 'No gamepad\n';
                     }
                 }
+                
+                if (!leftFound) debugText += 'LEFT CONTROLLER NOT FOUND!\n';
+                if (!rightFound) debugText += 'RIGHT CONTROLLER NOT FOUND!\n';
+                
+                document.getElementById('debug').textContent = debugText;
             }
             
             // Update zombies
