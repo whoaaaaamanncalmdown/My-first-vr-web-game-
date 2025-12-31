@@ -28,32 +28,9 @@
         #startButton:hover {
             background: #ff6666;
         }
-        #hud {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            background: rgba(0,0,0,0.8);
-            padding: 15px;
-            border-radius: 8px;
-            font-size: 16px;
-            line-height: 1.6;
-        }
-        #roundNotice {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #ff4444;
-            font-size: 48px;
-            font-weight: bold;
-            text-shadow: 3px 3px 6px black;
-            display: none;
-            z-index: 50;
-        }
         #debug {
             position: absolute;
-            top: 150px;
+            top: 10px;
             left: 10px;
             color: white;
             background: rgba(0,0,0,0.5);
@@ -68,15 +45,6 @@
 </head>
 <body>
     <button id="startButton">PLAY VR ZOMBIE SHOOTER</button>
-    <div id="hud">
-        <div>Round: <span id="round">1</span></div>
-        <div>Score: <span id="score">0</span></div>
-        <div>Zombies Left: <span id="zombieCount">0</span></div>
-        <div>Points: <span id="points">500</span></div>
-        <div>Ammo: <span id="ammo">30/30</span></div>
-        <div style="margin-top:8px; color: #ffff00;">Current Gun: <span id="gunName">Pistol</span></div>
-    </div>
-    <div id="roundNotice">ROUND 1</div>
     <div id="debug">Move joysticks...</div>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -85,6 +53,7 @@
         let controller1, controller2, dolly;
         let score = 0, points = 500, currentRound = 1, zombiesThisRound = 5, zombiesKilled = 0;
         let ammo = 30, maxAmmo = 30;
+        let hudCanvas, hudTexture, hudMesh;
         
         // Gun stats
         let guns = {
@@ -129,6 +98,7 @@
             
             createMap();
             createGun();
+            createInGameHUD();
             setupControllers();
             createWallGuns();
             createPackAPunch();
@@ -139,6 +109,69 @@
             
             renderer.setAnimationLoop(animate);
             window.addEventListener('resize', onWindowResize);
+        }
+        
+        function createInGameHUD() {
+            // Create canvas for HUD
+            hudCanvas = document.createElement('canvas');
+            hudCanvas.width = 512;
+            hudCanvas.height = 256;
+            
+            // Create texture from canvas
+            hudTexture = new THREE.CanvasTexture(hudCanvas);
+            
+            // Create HUD mesh
+            const hudGeometry = new THREE.PlaneGeometry(1.5, 0.75);
+            const hudMaterial = new THREE.MeshBasicMaterial({ 
+                map: hudTexture, 
+                transparent: true,
+                opacity: 0.9
+            });
+            hudMesh = new THREE.Mesh(hudGeometry, hudMaterial);
+            hudMesh.position.set(-0.6, 0.4, -1);
+            camera.add(hudMesh);
+            
+            updateInGameHUD();
+        }
+        
+        function updateInGameHUD() {
+            const ctx = hudCanvas.getContext('2d');
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
+            
+            // Background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
+            
+            // Round
+            ctx.fillStyle = '#ff4444';
+            ctx.font = 'bold 40px Arial';
+            ctx.fillText(`ROUND ${currentRound}`, 20, 50);
+            
+            // Points
+            ctx.fillStyle = '#ffff00';
+            ctx.font = 'bold 36px Arial';
+            ctx.fillText(`${points} PTS`, 20, 100);
+            
+            // Ammo
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 32px Arial';
+            ctx.fillText(`${ammo}/${maxAmmo}`, 20, 145);
+            
+            // Gun name
+            const gunData = guns[currentGunType];
+            ctx.fillStyle = gunData.packed ? '#ff00ff' : '#00ff00';
+            ctx.font = 'bold 24px Arial';
+            const gunText = gunData.packed ? gunData.name + ' [PaP]' : gunData.name;
+            ctx.fillText(gunText, 20, 180);
+            
+            // Zombies
+            ctx.fillStyle = '#00ff00';
+            ctx.font = '28px Arial';
+            ctx.fillText(`Zombies: ${zombies.length}`, 20, 220);
+            
+            hudTexture.needsUpdate = true;
         }
         
         function createMap() {
@@ -278,6 +311,7 @@
             
             document.getElementById('gunName').textContent = 
                 gunData.packed ? gunData.name + ' (PACKED)' : gunData.name;
+            updateInGameHUD();
         }
         
         function setupControllers() {
@@ -372,16 +406,40 @@
             zombiesKilled = 0;
             zombiesThisRound = 5 + (round - 1) * 3;
             
-            const notice = document.getElementById('roundNotice');
-            notice.textContent = `ROUND ${round}`;
-            notice.style.display = 'block';
-            setTimeout(() => { notice.style.display = 'none'; }, 3000);
+            // Create round notice in 3D space
+            showRoundNotice(round);
             
             for (let i = 0; i < zombiesThisRound; i++) {
                 setTimeout(() => spawnZombie(), i * 2000);
             }
             
-            updateHUD();
+            updateInGameHUD();
+        }
+        
+        function showRoundNotice(round) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#ff4444';
+            ctx.font = 'bold 80px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`ROUND ${round}`, 256, 150);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.MeshBasicMaterial({ 
+                map: texture, 
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+            const geometry = new THREE.PlaneGeometry(4, 2);
+            const notice = new THREE.Mesh(geometry, material);
+            
+            notice.position.set(0, 2, -5);
+            scene.add(notice);
+            
+            setTimeout(() => scene.remove(notice), 3000);
         }
         
         function spawnZombie() {
@@ -418,15 +476,11 @@
             
             scene.add(zombie);
             zombies.push(zombie);
-            updateHUD();
+            updateInGameHUD();
         }
         
         function updateHUD() {
-            document.getElementById('round').textContent = currentRound;
-            document.getElementById('score').textContent = score;
-            document.getElementById('zombieCount').textContent = zombies.length;
-            document.getElementById('points').textContent = points;
-            document.getElementById('ammo').textContent = ammo + '/' + maxAmmo;
+            updateInGameHUD();
         }
         
         function animate() {
