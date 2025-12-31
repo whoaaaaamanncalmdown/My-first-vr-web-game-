@@ -73,22 +73,33 @@
         function init() {
             startButton.style.display = 'none';
             
+            console.log('Initializing game...');
+            
+            // Scene setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x1a1a2e);
             scene.fog = new THREE.Fog(0x1a1a2e, 10, 50);
             
+            console.log('Scene created');
+            
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             
+            // Dolly for movement
             dolly = new THREE.Group();
             dolly.position.set(0, 0, 10);
             dolly.add(camera);
             scene.add(dolly);
+            
+            console.log('Camera and dolly created');
             
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.xr.enabled = true;
             document.body.appendChild(renderer.domElement);
             
+            console.log('Renderer created');
+            
+            // Lighting
             const ambient = new THREE.AmbientLight(0xffffff, 0.3);
             scene.add(ambient);
             
@@ -96,19 +107,38 @@
             light.position.set(10, 20, 10);
             scene.add(light);
             
+            console.log('Lights added');
+            
             createMap();
+            console.log('Map created');
+            
             createGun();
+            console.log('Gun created');
+            
             setupControllers();
-            createInGameHUD();
+            console.log('Controllers setup');
+            
             createWallGuns();
+            console.log('Wall guns created');
+            
             createPackAPunch();
+            console.log('Pack-a-Punch created');
+            
             startRound(1);
+            console.log('Round 1 started');
+            
+            createInGameHUD();
+            console.log('HUD created');
             
             const vrButton = createVRButton();
             document.body.appendChild(vrButton);
             
+            console.log('Starting animation loop');
             renderer.setAnimationLoop(animate);
+            
             window.addEventListener('resize', onWindowResize);
+            
+            console.log('Initialization complete!');
         }
         
         function createInGameHUD() {
@@ -142,6 +172,8 @@
         }
         
         function updateInGameHUD() {
+            if (!hudCanvas) return;
+            
             const ctx = hudCanvas.getContext('2d');
             
             // Clear canvas
