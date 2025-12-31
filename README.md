@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -195,25 +194,6 @@
             
             // Trigger shooting
             controller2.addEventListener('selectstart', shoot);
-            
-            // Handle joystick movement
-            renderer.xr.addEventListener('sessionstart', () => {
-                const session = renderer.xr.getSession();
-                session.addEventListener('inputsourceschange', () => {
-                    const sources = session.inputSources;
-                    for (let source of sources) {
-                        if (source.handedness === 'left' && source.gamepad) {
-                            updateMovement(source.gamepad);
-                        }
-                    }
-                });
-            });
-        }
-        
-        function updateMovement(gamepad) {
-            if (gamepad.axes.length >= 2) {
-                moveVector.set(gamepad.axes[0], gamepad.axes[1]);
-            }
         }
         
         function shoot() {
@@ -265,28 +245,35 @@
         }
         
         function animate() {
-            // Movement with joystick
-            if (moveVector.length() > 0.1) {
-                const forward = new THREE.Vector3(0, 0, -1);
-                forward.applyQuaternion(camera.quaternion);
-                forward.y = 0;
-                forward.normalize();
-                
-                const right = new THREE.Vector3(1, 0, 0);
-                right.applyQuaternion(camera.quaternion);
-                right.y = 0;
-                right.normalize();
-                
-                dolly.position.add(forward.multiplyScalar(-moveVector.y * 0.1));
-                dolly.position.add(right.multiplyScalar(moveVector.x * 0.1));
-            }
-            
-            // Get current session and update joystick
+            // Get current session and read joystick input
             const session = renderer.xr.getSession();
             if (session) {
                 for (let source of session.inputSources) {
                     if (source.handedness === 'left' && source.gamepad) {
-                        updateMovement(source.gamepad);
+                        const axes = source.gamepad.axes;
+                        if (axes.length >= 2) {
+                            const x = axes[2]; // Thumbstick X
+                            const y = axes[3]; // Thumbstick Y
+                            
+                            if (Math.abs(x) > 0.1 || Math.abs(y) > 0.1) {
+                                const speed = 0.1;
+                                
+                                // Get camera direction
+                                const direction = new THREE.Vector3();
+                                camera.getWorldDirection(direction);
+                                direction.y = 0;
+                                direction.normalize();
+                                
+                                // Get right vector
+                                const right = new THREE.Vector3();
+                                right.crossVectors(camera.up, direction);
+                                right.normalize();
+                                
+                                // Move dolly
+                                dolly.position.add(direction.multiplyScalar(-y * speed));
+                                dolly.position.add(right.multiplyScalar(-x * speed));
+                            }
+                        }
                     }
                 }
             }
