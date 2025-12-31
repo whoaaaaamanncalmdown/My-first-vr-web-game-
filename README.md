@@ -115,20 +115,20 @@
             // Create canvas for HUD
             hudCanvas = document.createElement('canvas');
             hudCanvas.width = 512;
-            hudCanvas.height = 256;
+            hudCanvas.height = 512;
             
             // Create texture from canvas
             hudTexture = new THREE.CanvasTexture(hudCanvas);
             
-            // Create HUD mesh
-            const hudGeometry = new THREE.PlaneGeometry(1.5, 0.75);
+            // Create HUD mesh - positioned in bottom right of view
+            const hudGeometry = new THREE.PlaneGeometry(0.6, 0.6);
             const hudMaterial = new THREE.MeshBasicMaterial({ 
                 map: hudTexture, 
                 transparent: true,
-                opacity: 0.9
+                opacity: 1
             });
             hudMesh = new THREE.Mesh(hudGeometry, hudMaterial);
-            hudMesh.position.set(-0.6, 0.4, -1);
+            hudMesh.position.set(0.4, -0.3, -0.8);
             camera.add(hudMesh);
             
             updateInGameHUD();
@@ -140,36 +140,63 @@
             // Clear canvas
             ctx.clearRect(0, 0, hudCanvas.width, hudCanvas.height);
             
-            // Background
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            ctx.fillRect(0, 0, hudCanvas.width, hudCanvas.height);
+            // Background box
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(20, 20, 472, 472);
+            
+            let y = 80;
             
             // Round
-            ctx.fillStyle = '#ff4444';
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px Arial';
+            ctx.fillText('Round:', 50, y);
+            ctx.fillStyle = '#ff6666';
             ctx.font = 'bold 40px Arial';
-            ctx.fillText(`ROUND ${currentRound}`, 20, 50);
+            ctx.fillText(currentRound.toString(), 200, y);
+            y += 70;
+            
+            // Score
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px Arial';
+            ctx.fillText('Score:', 50, y);
+            ctx.fillStyle = '#00ff00';
+            ctx.fillText(score.toString(), 200, y);
+            y += 70;
+            
+            // Zombies Left
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px Arial';
+            ctx.fillText('Zombies Left:', 50, y);
+            ctx.fillStyle = '#ff0000';
+            ctx.fillText(zombies.length.toString(), 350, y);
+            y += 70;
             
             // Points
-            ctx.fillStyle = '#ffff00';
+            ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 36px Arial';
-            ctx.fillText(`${points} PTS`, 20, 100);
+            ctx.fillText('Points:', 50, y);
+            ctx.fillStyle = '#ffff00';
+            ctx.fillText(points.toString(), 200, y);
+            y += 70;
             
-            // Ammo
+            // Ammo - BIG YELLOW TEXT
+            ctx.fillStyle = '#ffff00';
+            ctx.font = 'bold 48px Arial';
+            ctx.fillText('Ammo:', 50, y);
+            ctx.fillStyle = '#ffff00';
+            ctx.font = 'bold 52px Arial';
+            ctx.fillText(`${ammo}/${maxAmmo}`, 220, y);
+            y += 90;
+            
+            // Current Gun
+            const gunData = guns[currentGunType];
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 32px Arial';
-            ctx.fillText(`${ammo}/${maxAmmo}`, 20, 145);
-            
-            // Gun name
-            const gunData = guns[currentGunType];
-            ctx.fillStyle = gunData.packed ? '#ff00ff' : '#00ff00';
-            ctx.font = 'bold 24px Arial';
+            ctx.fillText('Current Gun:', 50, y);
+            ctx.fillStyle = gunData.packed ? '#ff00ff' : '#00ffff';
+            ctx.font = 'bold 36px Arial';
             const gunText = gunData.packed ? gunData.name + ' [PaP]' : gunData.name;
-            ctx.fillText(gunText, 20, 180);
-            
-            // Zombies
-            ctx.fillStyle = '#00ff00';
-            ctx.font = '28px Arial';
-            ctx.fillText(`Zombies: ${zombies.length}`, 20, 220);
+            ctx.fillText(gunText, 50, y + 45);
             
             hudTexture.needsUpdate = true;
         }
