@@ -1,170 +1,386 @@
-<script type="module">
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js";
-import { VRButton } from "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/webxr/VRButton.js";
-
-/* =======================
-   BASIC SETUP
-======================= */
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 1000);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
-renderer.xr.enabled = true;
-document.body.appendChild(renderer.domElement);
-document.body.appendChild(VRButton.createButton(renderer));
-
-/* =======================
-   XR RIG (IMPORTANT)
-======================= */
-const rig = new THREE.Group();
-scene.add(rig);
-rig.add(camera);
-
-/* =======================
-   LIGHTING
-======================= */
-scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 1.2));
-const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-sun.position.set(5, 10, 7);
-scene.add(sun);
-
-/* =======================
-   FLOOR
-======================= */
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(200, 200),
-  new THREE.MeshStandardMaterial({ color: 0x55aa55 })
-);
-floor.rotation.x = -Math.PI / 2;
-scene.add(floor);
-
-/* =======================
-   TARGET CUBES
-======================= */
-const cubes = [];
-for (let i = 0; i < 20; i++) {
-  const cube = new THREE.Mesh(
-    new THREE.BoxGeometry(),
-    new THREE.MeshStandardMaterial({ color: 0xff3333 })
-  );
-  cube.position.set(
-    Math.random() * 12 - 6,
-    Math.random() * 3 + 1,
-    Math.random() * -12
-  );
-  scene.add(cube);
-  cubes.push(cube);
-}
-
-/* =======================
-   CONTROLLERS
-======================= */
-const leftController = renderer.xr.getController(0);
-const rightController = renderer.xr.getController(1);
-rig.add(leftController);
-rig.add(rightController);
-
-/* =======================
-   HAND VISUALS
-======================= */
-function makeHand(color) {
-  return new THREE.Mesh(
-    new THREE.SphereGeometry(0.08, 16, 16),
-    new THREE.MeshStandardMaterial({ color })
-  );
-}
-leftController.add(makeHand(0x2222ff));
-rightController.add(makeHand(0xff2222));
-
-/* =======================
-   FAKE GUN
-======================= */
-const gun = new THREE.Mesh(
-  new THREE.BoxGeometry(0.04, 0.04, 0.25),
-  new THREE.MeshStandardMaterial({ color: 0x333333 })
-);
-gun.position.set(0, 0, -0.15);
-rightController.add(gun);
-
-/* =======================
-   GORILLA LOCOMOTION (FIXED)
-======================= */
-const prevLeft = new THREE.Vector3();
-const prevRight = new THREE.Vector3();
-const handVelLeft = new THREE.Vector3();
-const handVelRight = new THREE.Vector3();
-const bodyVelocity = new THREE.Vector3();
-const targetVelocity = new THREE.Vector3();
-
-/* TUNING (SMOOTH FEEL) */
-const CONTACT_Y = 1.4;
-const PUSH_FORCE = 2.0;
-const MAX_SPEED = 0.25;
-const HAND_SMOOTH = 0.25;  // higher = smoother hands
-const BODY_SMOOTH = 0.18;  // higher = smoother body
-const FRICTION = 0.985;    // closer to 1 = more glide
-const DEADZONE = 0.002;    // minimum speed for movement to count
-
-function gorillaStep(controller, prevPos, handVel) {
-  const world = new THREE.Vector3();
-  controller.getWorldPosition(world);
-
-  const local = world.clone();
-  rig.worldToLocal(local);
-
-  const delta = local.clone().sub(prevPos);
-
-  // Smooth hand velocity
-  handVel.lerp(delta, HAND_SMOOTH);
-
-  if (local.y < CONTACT_Y && handVel.lengthSq() > DEADZONE) {
-    targetVelocity.sub(handVel.clone().multiplyScalar(PUSH_FORCE));
-  }
-
-  prevPos.copy(local);
-}
-
-/* =======================
-   MAIN LOOP (FIXED ANIMATION LOOP)
-======================= */
-renderer.setAnimationLoop(() => {
-  targetVelocity.set(0, 0, 0);
-
-  // Update the hand velocities using the gorillaStep function
-  gorillaStep(leftController, prevLeft, handVelLeft);
-  gorillaStep(rightController, prevRight, handVelRight);
-
-  // Smooth body velocity
-  bodyVelocity.lerp(targetVelocity, BODY_SMOOTH);
-
-  // Apply friction to slow down movement
-  bodyVelocity.multiplyScalar(FRICTION);
-
-  // Clamp the speed to MAX_SPEED
-  bodyVelocity.clampLength(0, MAX_SPEED);
-
-  // Update the rig's position based on the velocity
-  rig.position.add(bodyVelocity);
-
-  // Ensure the rig stays above the ground (clamp Y position)
-  if (rig.position.y < CONTACT_Y) {
-    rig.position.y = CONTACT_Y;
-  }
-
-  // Render the scene
-  renderer.render(scene, camera);
-});
-
-/* =======================
-   RESIZE
-======================= */
-addEventListener("resize", () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
-</script>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR Zombie Shooter</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #startButton {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 24px;
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            z-index: 100;
+        }
+        #startButton:hover {
+            background: #ff6666;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <button id="startButton">PLAY VR ZOMBIE SHOOTER</button>
+    <div id="info">Score: <span id="score">0</span> | Zombies: <span id="zombieCount">0</span></div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, gun, zombies = [], score = 0;
+        let controller1, controller2, dolly;
+        let moveVector = new THREE.Vector2();
+        
+        const startButton = document.getElementById('startButton');
+        
+        startButton.addEventListener('click', init);
+        
+        function init() {
+            startButton.style.display = 'none';
+            
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            scene.fog = new THREE.Fog(0x1a1a2e, 10, 50);
+            
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // Dolly for movement
+            dolly = new THREE.Group();
+            dolly.position.set(0, 0, 10);
+            dolly.add(camera);
+            scene.add(dolly);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            document.body.appendChild(renderer.domElement);
+            
+            // Lighting
+            const ambient = new THREE.AmbientLight(0xffffff, 0.3);
+            scene.add(ambient);
+            
+            const light = new THREE.DirectionalLight(0xffffff, 0.8);
+            light.position.set(10, 20, 10);
+            scene.add(light);
+            
+            // Create map (floor and walls)
+            createMap();
+            
+            // Create gun
+            createGun();
+            
+            // Setup VR controllers
+            setupControllers();
+            
+            // Spawn initial zombies
+            for (let i = 0; i < 5; i++) {
+                spawnZombie();
+            }
+            
+            // Create VR button
+            const vrButton = createVRButton();
+            document.body.appendChild(vrButton);
+            
+            renderer.xr.addEventListener('sessionstart', () => {
+                console.log('VR Session started');
+            });
+            
+            renderer.setAnimationLoop(animate);
+            
+            window.addEventListener('resize', onWindowResize);
+        }
+        
+        function createMap() {
+            // Floor
+            const floorGeo = new THREE.PlaneGeometry(50, 50);
+            const floorMat = new THREE.MeshStandardMaterial({ 
+                color: 0x2d4a2b,
+                roughness: 0.8
+            });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = -1;
+            scene.add(floor);
+            
+            // Walls
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a });
+            
+            // Back wall
+            const wall1 = new THREE.Mesh(new THREE.BoxGeometry(50, 10, 1), wallMat);
+            wall1.position.set(0, 4, -25);
+            scene.add(wall1);
+            
+            // Left wall
+            const wall2 = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 50), wallMat);
+            wall2.position.set(-25, 4, 0);
+            scene.add(wall2);
+            
+            // Right wall
+            const wall3 = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 50), wallMat);
+            wall3.position.set(25, 4, 0);
+            scene.add(wall3);
+            
+            // Add some obstacles
+            for (let i = 0; i < 8; i++) {
+                const box = new THREE.Mesh(
+                    new THREE.BoxGeometry(2, 3, 2),
+                    new THREE.MeshStandardMaterial({ color: 0x663300 })
+                );
+                box.position.set(
+                    Math.random() * 30 - 15,
+                    1.5,
+                    Math.random() * 30 - 15
+                );
+                scene.add(box);
+            }
+        }
+        
+        function createGun() {
+            gun = new THREE.Group();
+            
+            // Gun body
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(0.1, 0.1, 0.5),
+                new THREE.MeshStandardMaterial({ color: 0x222222 })
+            );
+            body.position.z = -0.25;
+            gun.add(body);
+            
+            // Barrel
+            const barrel = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.02, 0.02, 0.3),
+                new THREE.MeshStandardMaterial({ color: 0x333333 })
+            );
+            barrel.rotation.x = Math.PI / 2;
+            barrel.position.z = -0.55;
+            gun.add(barrel);
+            
+            // Handle
+            const handle = new THREE.Mesh(
+                new THREE.BoxGeometry(0.08, 0.15, 0.08),
+                new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
+            );
+            handle.position.set(0, -0.1, -0.15);
+            gun.add(handle);
+        }
+        
+        function setupControllers() {
+            controller1 = renderer.xr.getController(0);
+            controller2 = renderer.xr.getController(1);
+            
+            // Attach gun to right controller
+            controller2.add(gun);
+            dolly.add(controller2);
+            dolly.add(controller1);
+            
+            // Trigger shooting
+            controller2.addEventListener('selectstart', shoot);
+            
+            // Handle joystick movement
+            renderer.xr.addEventListener('sessionstart', () => {
+                const session = renderer.xr.getSession();
+                session.addEventListener('inputsourceschange', () => {
+                    const sources = session.inputSources;
+                    for (let source of sources) {
+                        if (source.handedness === 'left' && source.gamepad) {
+                            updateMovement(source.gamepad);
+                        }
+                    }
+                });
+            });
+        }
+        
+        function updateMovement(gamepad) {
+            if (gamepad.axes.length >= 2) {
+                moveVector.set(gamepad.axes[0], gamepad.axes[1]);
+            }
+        }
+        
+        function shoot() {
+            // Create bullet
+            const bullet = new THREE.Mesh(
+                new THREE.SphereGeometry(0.05),
+                new THREE.MeshBasicMaterial({ color: 0xffff00 })
+            );
+            
+            const gunWorldPos = new THREE.Vector3();
+            gun.getWorldPosition(gunWorldPos);
+            bullet.position.copy(gunWorldPos);
+            
+            const direction = new THREE.Vector3(0, 0, -1);
+            direction.applyQuaternion(gun.getWorldQuaternion(new THREE.Quaternion()));
+            bullet.userData.velocity = direction.multiplyScalar(1.5);
+            bullet.userData.life = 60;
+            
+            scene.add(bullet);
+            
+            // Muzzle flash
+            const flash = new THREE.PointLight(0xffaa00, 2, 3);
+            flash.position.copy(gunWorldPos);
+            scene.add(flash);
+            setTimeout(() => scene.remove(flash), 50);
+        }
+        
+        function spawnZombie() {
+            const zombie = new THREE.Mesh(
+                new THREE.BoxGeometry(0.8, 1.8, 0.8),
+                new THREE.MeshStandardMaterial({ color: 0x00ff00 })
+            );
+            
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 20 + Math.random() * 10;
+            zombie.position.set(
+                Math.cos(angle) * distance,
+                0.9,
+                Math.sin(angle) * distance
+            );
+            
+            zombie.userData.health = 3;
+            zombie.userData.speed = 0.02 + Math.random() * 0.02;
+            
+            scene.add(zombie);
+            zombies.push(zombie);
+            
+            document.getElementById('zombieCount').textContent = zombies.length;
+        }
+        
+        function animate() {
+            // Movement with joystick
+            if (moveVector.length() > 0.1) {
+                const forward = new THREE.Vector3(0, 0, -1);
+                forward.applyQuaternion(camera.quaternion);
+                forward.y = 0;
+                forward.normalize();
+                
+                const right = new THREE.Vector3(1, 0, 0);
+                right.applyQuaternion(camera.quaternion);
+                right.y = 0;
+                right.normalize();
+                
+                dolly.position.add(forward.multiplyScalar(-moveVector.y * 0.1));
+                dolly.position.add(right.multiplyScalar(moveVector.x * 0.1));
+            }
+            
+            // Get current session and update joystick
+            const session = renderer.xr.getSession();
+            if (session) {
+                for (let source of session.inputSources) {
+                    if (source.handedness === 'left' && source.gamepad) {
+                        updateMovement(source.gamepad);
+                    }
+                }
+            }
+            
+            // Update zombies
+            zombies.forEach((zombie, index) => {
+                const direction = new THREE.Vector3();
+                direction.subVectors(dolly.position, zombie.position);
+                direction.y = 0;
+                direction.normalize();
+                
+                zombie.position.add(direction.multiplyScalar(zombie.userData.speed));
+                zombie.lookAt(dolly.position);
+            });
+            
+            // Update bullets
+            scene.children.forEach(child => {
+                if (child.userData.velocity) {
+                    child.position.add(child.userData.velocity);
+                    child.userData.life--;
+                    
+                    // Check collision with zombies
+                    zombies.forEach((zombie, zIndex) => {
+                        if (child.position.distanceTo(zombie.position) < 1) {
+                            zombie.userData.health--;
+                            scene.remove(child);
+                            
+                            if (zombie.userData.health <= 0) {
+                                scene.remove(zombie);
+                                zombies.splice(zIndex, 1);
+                                score += 100;
+                                document.getElementById('score').textContent = score;
+                                document.getElementById('zombieCount').textContent = zombies.length;
+                                
+                                // Spawn new zombie
+                                if (Math.random() < 0.7) spawnZombie();
+                            }
+                        }
+                    });
+                    
+                    if (child.userData.life <= 0) {
+                        scene.remove(child);
+                    }
+                }
+            });
+            
+            // Spawn more zombies if needed
+            if (zombies.length < 3) {
+                spawnZombie();
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        function createVRButton() {
+            const button = document.createElement('button');
+            button.style.position = 'absolute';
+            button.style.bottom = '20px';
+            button.style.left = '50%';
+            button.style.transform = 'translateX(-50%)';
+            button.style.padding = '12px 24px';
+            button.style.border = 'none';
+            button.style.borderRadius = '4px';
+            button.style.background = '#1183d6';
+            button.style.color = '#fff';
+            button.style.font = 'normal 13px sans-serif';
+            button.style.cursor = 'pointer';
+            button.textContent = 'ENTER VR';
+            
+            button.onclick = function() {
+                if (navigator.xr) {
+                    navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                        if (supported) {
+                            navigator.xr.requestSession('immersive-vr', {
+                                optionalFeatures: ['local-floor', 'bounded-floor']
+                            }).then((session) => {
+                                renderer.xr.setSession(session);
+                            });
+                        } else {
+                            button.textContent = 'VR NOT SUPPORTED';
+                        }
+                    });
+                } else {
+                    button.textContent = 'VR NOT AVAILABLE';
+                }
+            };
+            
+            return button;
+        }
+    </script>
+</body>
+</html>
